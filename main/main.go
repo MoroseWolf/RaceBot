@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -54,10 +55,16 @@ func main() {
 		userTimestamp := obj.Message.Date
 		userDate := time.Unix(int64(userTimestamp), 0)
 
-		messageText := deleteMention(obj.Message.Text)
+		messageText := strings.ToLower(obj.Message.Text)
+
+		matchedDrSt, _ := regexp.MatchString(`личн.*зач[её]т`, messageText)
+		matchedCld, _ := regexp.MatchString(`календар.*сезона`, messageText)
+		matchedNxRc, _ := regexp.MatchString(`следующ.*гонк`, messageText)
+		matchedConsStFull, _ := regexp.MatchString(`куб.*конструктор`, messageText)
+		matchedConsSt, _ := (regexp.MatchString(`кк`, messageText))
 
 		switch {
-		case messageText == "личный зачёт" || messageText == "личный зачет" || messageText == "Личный зачёт" || messageText == "Личный зачет":
+		case matchedDrSt:
 			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/driverStandings.json", userDate.Year()))
 			if err != nil {
 				log.Fatalln(err)
@@ -75,7 +82,7 @@ func main() {
 
 			messageToUser = fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable))
 
-		case messageText == "календарь сезона" || messageText == "Календарь сезона":
+		case matchedCld:
 			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
 			if err != nil {
 				log.Fatalln(err)
@@ -92,7 +99,7 @@ func main() {
 
 			messageToUser = fmt.Sprintf("Календарь F1, сезон %d:\n%s", userDate.Year(), racesToString(races.MRData.RaceTable.Races))
 
-		case messageText == "следующая гонка" || messageText == "Следующая гонка" || messageText == "некст гонка":
+		case matchedNxRc:
 			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
 			if err != nil {
 				log.Fatalln(err)
@@ -116,7 +123,7 @@ func main() {
 				messageToUser = fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace)))
 			}
 
-		case messageText == "кубок конструкторов" || messageText == "кк" || messageText == "Кубок конструкторов":
+		case matchedConsStFull || matchedConsSt:
 			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/constructorStandings.json", userDate.Year()))
 			if err != nil {
 				log.Fatalln(err)

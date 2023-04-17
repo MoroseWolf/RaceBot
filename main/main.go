@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/SevereCloud/vksdk/v2/api"
@@ -61,7 +62,8 @@ func main() {
 		matchedCld, _ := regexp.MatchString(`календар.*сезона`, messageText)
 		matchedNxRc, _ := regexp.MatchString(`следующ.*гонк`, messageText)
 		matchedConsStFull, _ := regexp.MatchString(`куб.*конструктор`, messageText)
-		matchedConsSt, _ := (regexp.MatchString(`кк`, messageText))
+		matchedConsSt, _ := regexp.MatchString(`кк`, messageText)
+		matchedLstRc, _ := regexp.MatchString(`результат.*гонк`, messageText)
 
 		switch {
 		case matchedDrSt:
@@ -140,6 +142,23 @@ func main() {
 
 			messageToUser = fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constructors.MRData.StandingsTable.StandingsLists[0].ConstructorStandings))
 
+		case matchedLstRc:
+			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last/results.json", userDate.Year()))
+			if err != nil {
+				log.Fatalln(err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Fatalln(err)
+			}
+
+			var lastRace Object
+			json.Unmarshal([]byte(body), &lastRace)
+
+			messageToUser = fmt.Sprintf("Последняя гонка F1 %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
+
 		default:
 			messageToUser = "Прости, пока что не понимаю тебя. Но я умный и скоро научусь этому!"
 
@@ -214,6 +233,45 @@ func constructorsToString(constructors []ConstructorStandingsItem) string {
 
 func constructorToString(constructor ConstructorStandingsItem) string {
 	return fmt.Sprintf("%2s | %s - %-3s \n", constructor.Position, constructor.Constructor.Name, constructor.Points)
+}
+
+func raceResultsToString(race Race) string {
+	/*
+		var driverInRaceCount = len(race.Results)
+		driversList := make([]string, 2)
+		driversList := make([]string, driverInRaceCount+1)
+
+		driversList = append(driversList, race.RaceName+":\n")
+	*/
+	message := new(strings.Builder)
+
+	w := tabwriter.NewWriter(message, 2, 0, 1, ' ', tabwriter.AlignRight)
+	for _, position := range race.Results {
+		if position.Status == "Finished" {
+			if position.Points != "0" {
+				fmt.Fprintf(w, "%s |\t%s |\t%s - %s\t\n", position.Position, position.Driver.Code, position.Time.Time, position.Points)
+			} else {
+				fmt.Fprintf(w, "%s |\t%s |\t%s\t\n", position.Position, position.Driver.Code, position.Time.Time)
+			}
+		} else {
+			fmt.Fprintf(w, "%s |\t%s | - %s\t\n", position.Position, position.Driver.Code, position.Status)
+		}
+	}
+
+	w.Flush()
+	/*
+		driversList = append(driversList, message.String())
+
+			for _, position := range race.Results {
+				driversList = append(driversList, raceResultToString(position))
+			}
+	*/
+	//return strings.Join(driversList, "")
+	return message.String()
+}
+
+func raceResultToString(position Result) string {
+	return fmt.Sprintf("%2s | %-3s | %-11s - %-3s \n", position.Position, position.Driver.Code, position.Time.Time, position.Points)
 }
 
 func formatDateTime(race Race) Race {

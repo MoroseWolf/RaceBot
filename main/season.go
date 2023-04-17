@@ -39,6 +39,35 @@ type Circuit struct {
 	Location    Location
 }
 
+type Result struct {
+	Number      string
+	Position    string
+	Points      string
+	Driver      Driver
+	Constructor Constructors
+	Grid        string
+	Laps        string
+	Status      string
+	Time        Time
+	FastestLap  FastestLap
+}
+
+type Time struct {
+	Millis string
+	Time   string
+}
+type AverageSpeed struct {
+	Units string
+	Speed string
+}
+
+type FastestLap struct {
+	Rank         string
+	Lap          string
+	Time         Time
+	AverageSpeed AverageSpeed
+}
+
 type Race struct {
 	Season         string
 	Round          string
@@ -52,6 +81,7 @@ type Race struct {
 	ThirdPractice  ThirdPractice
 	Qualifying     Qualifying
 	Sprint         Sprint
+	Results        []Result
 }
 
 type RaceTable struct {

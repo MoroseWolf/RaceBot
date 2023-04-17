@@ -2,7 +2,10 @@ module sample-app
 
 go 1.19
 
-require github.com/SevereCloud/vksdk/v2 v2.16.0
+require (
+	github.com/SevereCloud/vksdk/v2 v2.16.0
+	github.com/joho/godotenv v1.5.1
+)
 
 require (
 	github.com/klauspost/compress v1.16.3 // indirect

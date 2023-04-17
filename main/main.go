@@ -17,6 +17,7 @@ import (
 	"github.com/SevereCloud/vksdk/v2/api/params"
 	"github.com/SevereCloud/vksdk/v2/events"
 	"github.com/SevereCloud/vksdk/v2/longpoll-bot"
+	"github.com/joho/godotenv"
 )
 
 var months = map[string]string{
@@ -34,9 +35,15 @@ var months = map[string]string{
 	"12": "декабря",
 }
 
+func init() {
+	if err := godotenv.Load("../.env"); err != nil {
+		log.Print("No .env file found")
+	}
+}
+
 func main() {
 
-	token := os.Getenv("RACEVK_BOT")
+	token, _ := os.LookupEnv("RACEVK_BOT")
 	vk := api.NewVK(token)
 
 	group, err := vk.GroupsGetByID(api.Params{})

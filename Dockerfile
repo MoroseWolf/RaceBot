@@ -17,7 +17,7 @@ RUN mkdir /app
 ADD . /app/
 WORKDIR /app
 
-ENV RACEBOT_VK = "Token"
+##ENV RACEBOT_VK = "Token"
 
 RUN go mod download
 RUN go build -o racebot_vk ./main/

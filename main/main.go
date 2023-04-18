@@ -252,16 +252,16 @@ func raceResultsToString(race Race) string {
 	*/
 	message := new(strings.Builder)
 
-	w := tabwriter.NewWriter(message, 2, 0, 1, ' ', tabwriter.AlignRight)
+	w := tabwriter.NewWriter(message, 2, 5, 1, ' ', tabwriter.AlignRight)
 	for _, position := range race.Results {
 		if position.Status == "Finished" {
 			if position.Points != "0" {
-				fmt.Fprintf(w, "%s |\t%s |\t%s - %s\t\n", position.Position, position.Driver.Code, position.Time.Time, position.Points)
+				fmt.Fprintf(w, "%s |\t%s |\t %s - %s\n", position.Position, position.Driver.Code, position.Time.Time, position.Points)
 			} else {
-				fmt.Fprintf(w, "%s |\t%s |\t%s\t\n", position.Position, position.Driver.Code, position.Time.Time)
+				fmt.Fprintf(w, "%s |\t%s |\t %s\n", position.Position, position.Driver.Code, position.Time.Time)
 			}
 		} else {
-			fmt.Fprintf(w, "%s |\t%s | - %s\t\n", position.Position, position.Driver.Code, position.Status)
+			fmt.Fprintf(w, "%s |\t%s |\t - %s\n", position.Position, position.Driver.Code, position.Status)
 		}
 	}
 

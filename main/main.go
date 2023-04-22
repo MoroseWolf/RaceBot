@@ -71,8 +71,30 @@ func main() {
 		matchedConsStFull, _ := regexp.MatchString(`куб.*конструктор`, messageText)
 		matchedConsSt, _ := regexp.MatchString(`кк`, messageText)
 		matchedLstRc, _ := regexp.MatchString(`результат.*гонк`, messageText)
+		matchedHelp, _ := regexp.MatchString(`что умеешь`, messageText)
+		matchedHello, _ := regexp.MatchString(`привет`, messageText)
+		matchedDaysAfterRace, _ := regexp.MatchString(`дней без формулы|F1`, messageText)
 
 		switch {
+		case matchedHello:
+			messageToUser =
+				`Привет! Я бот, который делится информацией про F1 :)
+				Пока что я могу сказать тебе информацию только о текущем сезоне (но всё ещё впереди).
+				Для того чтобы подробнее познакомиться с моими возможностями напиши мне "Что умеешь?". 
+				
+				Приятного пользования :)`
+		case matchedHelp:
+			messageToUser =
+				`Команды которые я понимаю (могу их прочесть в твоём ообщении среди других слов):
+					• календарь сезона - список гран-при F1 текущего сезона
+					• кубок кострукторов или кк - текущее положение команд в кубке контрукторов
+					• личный зачёт - текущее положение гонщиков в личном зачёте
+					• следующая гонка - информация о следующем гран-при F1
+					• результат гонки - результат последней прошедшей гонки F1
+					• дней без формулы/F1 - количество дней с последней гонки F1
+			
+				!Внимание! Информация, связанная с проведённой гонкой может обновялться не сразу, а в течении дня.
+				Работаем над получением информации с других мест с более быстрым обновлением данных.`
 		case matchedDrSt:
 			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/driverStandings.json", userDate.Year()))
 			if err != nil {
@@ -165,6 +187,29 @@ func main() {
 			json.Unmarshal([]byte(body), &lastRace)
 
 			messageToUser = fmt.Sprintf("Последняя гонка F1 %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
+
+		case matchedDaysAfterRace:
+			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last.json", userDate.Year()))
+			if err != nil {
+				log.Fatalln(err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Fatalln(err)
+			}
+
+			var lastRace Object
+			json.Unmarshal([]byte(body), &lastRace)
+
+			lastRaceDate, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", lastRace.MRData.RaceTable.Races[0].Date, lastRace.MRData.RaceTable.Races[0].Time))
+			if err != nil {
+				log.Fatalln(err)
+			}
+			difference := userDate.Sub(lastRaceDate)
+
+			messageToUser = fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24))
 
 		default:
 			messageToUser = "Прости, пока что не понимаю тебя. Но я умный и скоро научусь этому!"

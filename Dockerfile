@@ -1,24 +1,12 @@
-FROM golang:latest
-##
-##WORKDIR /RaceBot_VK
-###
-##COPY go.mod ./
-##COPY go.sum ./
-##RUN go mod download
-
-##COPY ./main ./
-##RUN go version
-
-##RUN go build -o /racebot_vk
-##CMD ["racebot_vk", "./main/main.go"]
+FROM golang:1.20-alpine
 
 RUN mkdir /app
 
 ADD . /app/
 WORKDIR /app
 
-##ENV RACEBOT_VK = "Token"
+ENV RACEVK_BOT="Token"
 
 RUN go mod download
-RUN go build -o racebot_vk ./main/
+RUN go build -o racebot_vk ./main
 CMD ["./racebot_vk"]

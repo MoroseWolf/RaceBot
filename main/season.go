@@ -50,6 +50,9 @@ type Result struct {
 	Status      string
 	Time        Time
 	FastestLap  FastestLap
+	Q1          string
+	Q2          string
+	Q3          string
 }
 
 type Time struct {
@@ -69,19 +72,21 @@ type FastestLap struct {
 }
 
 type Race struct {
-	Season         string
-	Round          string
-	Url            string
-	RaceName       string
-	Circuit        Circuit
-	Date           string
-	Time           string
-	FirstPractice  FirstPractice
-	SecondPractice SecondPractice
-	ThirdPractice  ThirdPractice
-	Qualifying     Qualifying
-	Sprint         Sprint
-	Results        []Result
+	Season            string
+	Round             string
+	Url               string
+	RaceName          string
+	Circuit           Circuit
+	Date              string
+	Time              string
+	FirstPractice     FirstPractice
+	SecondPractice    SecondPractice
+	ThirdPractice     ThirdPractice
+	Qualifying        Qualifying
+	Sprint            Sprint
+	Results           []Result
+	QualifyingResults []Result
+	SprintResults     []Result
 }
 
 type RaceTable struct {

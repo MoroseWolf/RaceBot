@@ -57,35 +57,63 @@ func main() {
 	}
 
 	lp.MessageNew(func(_ context.Context, obj events.MessageNewObject) {
-		log.Printf("%d: %s", obj.Message.PeerID, obj.Message.Text)
+		log.Printf("From id %d: %s", obj.Message.PeerID, obj.Message.Text)
 
 		var messageToUser string
+		var adminStream bool
+		var playload Playload
+
 		userTimestamp := obj.Message.Date
 		userDate := time.Unix(int64(userTimestamp), 0)
 
 		messageText := strings.ToLower(obj.Message.Text)
+
+		if obj.Message.Payload != "" {
+			err := json.Unmarshal([]byte(obj.Message.Payload), &playload)
+			if err != nil {
+				log.Fatalln(err)
+			}
+		}
+		log.Printf("Command from message: %s \n", playload.Command)
+
+		b := params.NewMessagesSendBuilder()
 
 		matchedDrSt, _ := regexp.MatchString(`личн.*зач[её]т`, messageText)
 		matchedCld, _ := regexp.MatchString(`календар.*сезона`, messageText)
 		matchedNxRc, _ := regexp.MatchString(`следующ.*гонк`, messageText)
 		matchedConsStFull, _ := regexp.MatchString(`куб.*конструктор`, messageText)
 		matchedConsSt, _ := regexp.MatchString(`кк`, messageText)
-		matchedLstRc, _ := regexp.MatchString(`результат.*гонк`, messageText)
+		matchedLstRc, _ := regexp.MatchString(`\A.?результат.?\sгонк`, messageText)
+		matchedLstQual, _ := regexp.MatchString(`\A.?результат.?\sквалы`, messageText)
+		matchedLstSpr, _ := regexp.MatchString(`\A.?результат.?\sспринта`, messageText)
 		matchedHelp, _ := regexp.MatchString(`что умеешь`, messageText)
-		matchedHello, _ := regexp.MatchString(`привет`, messageText)
+		matchedHello, _ := regexp.MatchString(`начать`, messageText)
 		matchedDaysAfterRace, _ := regexp.MatchString(`дней без формулы|F1`, messageText)
+		matchedStream, _ := regexp.MatchString(`\A.?старт стрим`, messageText)
+		matchedLstGP, _ := regexp.MatchString(`\A.?ласт гп`, messageText)
+		matchedRaceRes, _ := regexp.MatchString(`raceRes_\d{1,2}`, playload.Command)
+		matchedQualRes, _ := regexp.MatchString(`qualRes_\d{1,2}`, playload.Command)
+		matchedSprRes, _ := regexp.MatchString(`sprRes_\d{1,2}`, playload.Command)
 
-		switch {
-		case matchedHello:
-			messageToUser =
-				`Привет! Я бот, который делится информацией про F1 :)
+		if obj.Message.PeerID == 152819213 && matchedStream {
+			adminStream = true
+			messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в VK vk.com/f1memestv."
+
+		} else {
+
+			switch {
+
+			case matchedHello:
+				messageToUser =
+					`Привет! Я бот, который делится информацией про F1 :)
 				Пока что я могу сказать тебе информацию только о текущем сезоне (но всё ещё впереди).
 				Для того чтобы подробнее познакомиться с моими возможностями напиши мне "Что умеешь?". 
 				
 				Приятного пользования :)`
-		case matchedHelp:
-			messageToUser =
-				`Команды которые я понимаю (могу их прочесть в твоём ообщении среди других слов):
+
+			case matchedHelp:
+				messageToUser =
+					`Команды которые я понимаю (могу их прочесть в твоём ообщении среди других слов):
 					• календарь сезона - список гран-при F1 текущего сезона
 					• кубок кострукторов или кк - текущее положение команд в кубке контрукторов
 					• личный зачёт - текущее положение гонщиков в личном зачёте
@@ -93,133 +121,229 @@ func main() {
 					• результат гонки - результат последней прошедшей гонки F1
 					• дней без формулы/F1 - количество дней с последней гонки F1
 			
-				!Внимание! Информация, связанная с проведённой гонкой может обновялться не сразу, а в течении дня.
-				Работаем над получением информации с других мест с более быстрым обновлением данных.`
-		case matchedDrSt:
-			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/driverStandings.json", userDate.Year()))
-			if err != nil {
-				log.Fatalln(err)
+				!Внимание! Информация, связанная с проведённой гонкой может обновляться не сразу.
+				Работаем над этим.`
+
+			case matchedDrSt:
+				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/driverStandings.json", userDate.Year()))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var object Object
+				json.Unmarshal([]byte(body), &object)
+				driversTable := object.MRData.StandingsTable.StandingsLists[0].DriverStandings
+
+				messageToUser = fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable))
+
+			case matchedCld:
+				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var races Object
+				json.Unmarshal([]byte(body), &races)
+
+				messageToUser = fmt.Sprintf("Календарь F1, сезон %d:\n%s", userDate.Year(), racesToString(races.MRData.RaceTable.Races))
+
+			case matchedNxRc:
+				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var races Object
+				json.Unmarshal([]byte(body), &races)
+
+				isAfter := checkCurrToLastTime(int64(userTimestamp), races.MRData.RaceTable.Races[len(races.MRData.RaceTable.Races)-1])
+
+				if isAfter {
+					messageToUser = "Сезон закончился!"
+				} else {
+					nextRace := findNextRace(int64(userTimestamp), races.MRData.RaceTable.Races)
+					messageToUser = fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace)))
+				}
+
+			case matchedConsStFull || matchedConsSt:
+				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/constructorStandings.json", userDate.Year()))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var constructors Object
+				json.Unmarshal([]byte(body), &constructors)
+
+				messageToUser = fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constructors.MRData.StandingsTable.StandingsLists[0].ConstructorStandings))
+
+			case matchedLstRc || matchedRaceRes:
+				var reqUrl string
+				if matchedRaceRes {
+					partsMessage := strings.Split(playload.Command, "_")
+					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/%s/results.json", userDate.Year(), partsMessage[1])
+				} else {
+					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/last/results.json", userDate.Year())
+				}
+				resp, err := http.Get(reqUrl)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var lastRace Object
+				json.Unmarshal([]byte(body), &lastRace)
+
+				if matchedRaceRes {
+					messageToUser = fmt.Sprintf("Результаты %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
+				} else {
+					messageToUser = fmt.Sprintf("Последняя гонка F1 %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
+				}
+
+			case matchedDaysAfterRace:
+				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last.json", userDate.Year()))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var lastRace Object
+				json.Unmarshal([]byte(body), &lastRace)
+
+				lastRaceDate, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", lastRace.MRData.RaceTable.Races[0].Date, lastRace.MRData.RaceTable.Races[0].Time))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				difference := userDate.Sub(lastRaceDate)
+
+				messageToUser = fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24))
+
+			case matchedLstGP:
+				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last.json", userDate.Year()))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var temp Object
+				json.Unmarshal([]byte(body), &temp)
+				curRace := formatDateTime(temp.MRData.RaceTable.Races[0])
+				strCrslItem := makeCarouselGPItem(curRace)
+
+				messageToUser = "Информация о гран-при:"
+				b.Template(strCrslItem)
+
+			case matchedLstQual || matchedQualRes:
+				var reqUrl string
+				if matchedQualRes {
+					partsMessage := strings.Split(playload.Command, "_")
+					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/%s/qualifying.json", userDate.Year(), partsMessage[1])
+				} else {
+					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/last/qualifying.json", userDate.Year())
+				}
+				resp, err := http.Get(reqUrl)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var temp Object
+				json.Unmarshal([]byte(body), &temp)
+				qualRace := temp.MRData.RaceTable.Races[0]
+
+				if matchedQualRes {
+					messageToUser = fmt.Sprintf("Результаты квалификации %s:\n%s", qualRace.RaceName, qualifyingResultsToString(qualRace))
+				} else {
+					messageToUser = fmt.Sprintf("Последняя квалификация %s:\n%s", qualRace.RaceName, qualifyingResultsToString(qualRace))
+				}
+
+			case matchedLstSpr || matchedSprRes:
+				var reqUrl string
+				if matchedSprRes {
+					partsMessage := strings.Split(playload.Command, "_")
+					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/%s/sprint.json", userDate.Year(), partsMessage[1])
+				} else {
+					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/sprint.json", userDate.Year())
+				}
+				resp, err := http.Get(reqUrl)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				defer resp.Body.Close()
+
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Fatalln(err)
+				}
+
+				var temp Object
+				json.Unmarshal([]byte(body), &temp)
+
+				if matchedSprRes {
+					sprRace := temp.MRData.RaceTable.Races[0]
+					messageToUser = fmt.Sprintf("Результаты спринт-гонки %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
+				} else {
+					sprRace := temp.MRData.RaceTable.Races[len(temp.MRData.RaceTable.Races)-1]
+					messageToUser = fmt.Sprintf("Последняя спринт-гонка %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
+				}
+
+			default:
+				messageToUser = "Прости, пока что не понимаю тебя. Но я умный и скоро научусь этому!"
+
 			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			var object Object
-			json.Unmarshal([]byte(body), &object)
-			driversTable := object.MRData.StandingsTable.StandingsLists[0].DriverStandings
-
-			messageToUser = fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable))
-
-		case matchedCld:
-			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			var races Object
-			json.Unmarshal([]byte(body), &races)
-
-			messageToUser = fmt.Sprintf("Календарь F1, сезон %d:\n%s", userDate.Year(), racesToString(races.MRData.RaceTable.Races))
-
-		case matchedNxRc:
-			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			var races Object
-			json.Unmarshal([]byte(body), &races)
-
-			isAfter := checkCurrToLastTime(int64(userTimestamp), races.MRData.RaceTable.Races[len(races.MRData.RaceTable.Races)-1])
-
-			if isAfter {
-				messageToUser = "Сезон закончился!"
-			} else {
-				nextRace := findNextRace(int64(userTimestamp), races.MRData.RaceTable.Races)
-				messageToUser = fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace)))
-			}
-
-		case matchedConsStFull || matchedConsSt:
-			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/constructorStandings.json", userDate.Year()))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			var constructors Object
-			json.Unmarshal([]byte(body), &constructors)
-
-			messageToUser = fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constructors.MRData.StandingsTable.StandingsLists[0].ConstructorStandings))
-
-		case matchedLstRc:
-			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last/results.json", userDate.Year()))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			var lastRace Object
-			json.Unmarshal([]byte(body), &lastRace)
-
-			messageToUser = fmt.Sprintf("Последняя гонка F1 %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
-
-		case matchedDaysAfterRace:
-			resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last.json", userDate.Year()))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			defer resp.Body.Close()
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
-
-			var lastRace Object
-			json.Unmarshal([]byte(body), &lastRace)
-
-			lastRaceDate, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", lastRace.MRData.RaceTable.Races[0].Date, lastRace.MRData.RaceTable.Races[0].Time))
-			if err != nil {
-				log.Fatalln(err)
-			}
-			difference := userDate.Sub(lastRaceDate)
-
-			messageToUser = fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24))
-
-		default:
-			messageToUser = "Прости, пока что не понимаю тебя. Но я умный и скоро научусь этому!"
-
 		}
 
-		b := params.NewMessagesSendBuilder()
 		b.Message(messageToUser)
 		b.RandomID(0)
-		b.PeerID(obj.Message.PeerID)
+
+		if adminStream {
+			b.PeerID(2000000005)
+		} else {
+			b.PeerID(obj.Message.PeerID)
+		}
 
 		respCode, err := vk.MessagesSend(b.Params)
 		fmt.Println(respCode)
@@ -228,7 +352,6 @@ func main() {
 		}
 	})
 
-	// Запускаем Bots Longpoll
 	log.Println("Start longpoll")
 	if err := lp.Run(); err != nil {
 		log.Fatal(err)
@@ -427,9 +550,93 @@ func raceFullInfoToString(race Race) string {
 	}
 }
 
+func qualifyingResultsToString(race Race) string {
+
+	message := new(strings.Builder)
+
+	w := tabwriter.NewWriter(message, 2, 5, 1, ' ', tabwriter.AlignRight)
+	for _, qualPosition := range race.QualifyingResults {
+		if qualPosition.Q3 != "" {
+			//fmt.Fprintf(w, "%s |\t%s |\t\n Q1: %s -- Q2: %s -- Q3: %s \n", qualPosition.Position, qualPosition.Driver.Code, qualPosition.Q1, qualPosition.Q2, qualPosition.Q3)
+			fmt.Fprintf(w, "%s |\t%s |\t\n Q1: %s\n Q2: %s\n Q3: %s\n\n", qualPosition.Position, qualPosition.Driver.Code, qualPosition.Q1, qualPosition.Q2, qualPosition.Q3)
+
+		} else {
+			if qualPosition.Q2 != "" {
+				fmt.Fprintf(w, "%s |\t%s |\t\n Q1: %s\n Q2: %s\n\n", qualPosition.Position, qualPosition.Driver.Code, qualPosition.Q1, qualPosition.Q2)
+			} else {
+				fmt.Fprintf(w, "%s |\t%s |\t\n Q1: %s \n\n", qualPosition.Position, qualPosition.Driver.Code, qualPosition.Q1)
+			}
+		}
+	}
+
+	w.Flush()
+	return message.String()
+}
+
+func qualifyingResultToString(qualPosition Result) string {
+	return fmt.Sprintf("%2s | %-3s | Q1: %-11s -- Q2: %-11s -- Q3: %-11s \n", qualPosition.Position, qualPosition.Driver.Code, qualPosition.Q1, qualPosition.Q2, qualPosition.Q3)
+}
+
+func sprintResultsToString(race Race) string {
+
+	message := new(strings.Builder)
+
+	w := tabwriter.NewWriter(message, 2, 5, 1, ' ', tabwriter.AlignRight)
+	for _, position := range race.SprintResults {
+		if position.Status == "Finished" {
+			if position.Points != "0" {
+				fmt.Fprintf(w, "%s |\t%s |\t %s - %s\n", position.Position, position.Driver.Code, position.Time.Time, position.Points)
+			} else {
+				fmt.Fprintf(w, "%s |\t%s |\t %s\n", position.Position, position.Driver.Code, position.Time.Time)
+			}
+		} else {
+			fmt.Fprintf(w, "%s |\t%s |\t - %s\n", position.Position, position.Driver.Code, position.Status)
+		}
+	}
+
+	w.Flush()
+	return message.String()
+}
+
 func deleteMention(messageText string) string {
 	messageText = strings.Replace(messageText, ", ", "", 1)
 	messageText = strings.TrimPrefix(messageText, "[club219009582|@club219009582]")
 	messageText = strings.TrimPrefix(messageText, "[club219009582|Race Bot]")
 	return messageText
+}
+
+func makeCarouselGPItem(curRace Race) string {
+	var buttonsArray = make([]Button, 0, 3)
+
+	actionBtn1 := ActionBtn{TypeAction: "text", Label: "Результат гонки", Payload: fmt.Sprintf(`{"command" : "raceRes_%s"}`, curRace.Round)}
+	actionBtn2 := ActionBtn{TypeAction: "text", Label: "Результат квалификации", Payload: fmt.Sprintf(`{"command" : "qualRes_%s"}`, curRace.Round)}
+
+	btn1 := Button{actionBtn1}
+	btn2 := Button{actionBtn2}
+	var btn3 Button
+	if curRace.Sprint.Date != "" {
+		actionBtn3 := ActionBtn{TypeAction: "text", Label: "Результат спринта", Payload: fmt.Sprintf(`{"command" : "sprRes_%s"}`, curRace.Round)}
+		btn3.Action = actionBtn3
+	}
+
+	buttonsArray = append(buttonsArray, btn1, btn2)
+	if curRace.Sprint.Date != "" {
+		buttonsArray = append(buttonsArray, btn3)
+	}
+
+	crslItem := CarouselItem{
+		Title:       curRace.RaceName,
+		Description: fmt.Sprintf("%s\n%s", curRace.Circuit.CircuitName, curRace.Date+", "+curRace.Time),
+		PhotoID:     "-219009582_457239024",
+		Action:      ActionBtn{TypeAction: "open_link", Link: curRace.Url},
+		Buttons:     buttonsArray}
+	crsl := Carousel{Type: "carousel", Elements: []CarouselItem{crslItem}}
+
+	jsCrl, err := json.Marshal(crsl)
+	fmt.Println(string(jsCrl))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return string(jsCrl)
 }

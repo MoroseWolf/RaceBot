@@ -7,6 +7,7 @@ type Kb struct {
 
 type Button struct {
 	Action ActionBtn `json:"action"`
+	Color  string    `json:"color,omitempty"`
 }
 
 type ActionBtn struct {

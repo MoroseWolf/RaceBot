@@ -91,6 +91,7 @@ func main() {
 		matchedDaysAfterRace, _ := regexp.MatchString(`дней без формулы|F1`, messageText)
 		matchedStream, _ := regexp.MatchString(`старт стрим`, messageText)
 		matchedLstGP, _ := regexp.MatchString(`ласт гп`, messageText)
+		matchedGPs, _ := regexp.MatchString(`этапы`, messageText)
 		matchedRaceRes, _ := regexp.MatchString(`raceRes_\d{1,2}`, playload.Command)
 		matchedQualRes, _ := regexp.MatchString(`qualRes_\d{1,2}`, playload.Command)
 		matchedSprRes, _ := regexp.MatchString(`sprRes_\d{1,2}`, playload.Command)
@@ -223,7 +224,11 @@ func main() {
 				json.Unmarshal([]byte(body), &lastRace)
 
 				if matchedRaceRes {
-					messageToUser = fmt.Sprintf("Результаты %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
+					if len(lastRace.MRData.RaceTable.Races) > 0 {
+						messageToUser = fmt.Sprintf("Результаты %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
+					} else {
+						messageToUser = "Информации о результатах данной гонки нет. Возможно, она появятся в будущем :)"
+					}
 				} else {
 					messageToUser = fmt.Sprintf("Последняя гонка F1 %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
 				}
@@ -272,6 +277,7 @@ func main() {
 				b.Template(strCrslItem)
 
 			case matchedLstQual || matchedQualRes:
+
 				var reqUrl string
 				if matchedQualRes {
 					partsMessage := strings.Split(playload.Command, "_")
@@ -292,11 +298,16 @@ func main() {
 
 				var temp Object
 				json.Unmarshal([]byte(body), &temp)
-				qualRace := temp.MRData.RaceTable.Races[0]
 
 				if matchedQualRes {
-					messageToUser = fmt.Sprintf("Результаты квалификации %s:\n%s", qualRace.RaceName, qualifyingResultsToString(qualRace))
+					if len(temp.MRData.RaceTable.Races) > 0 {
+						qualRace := temp.MRData.RaceTable.Races[0]
+						messageToUser = fmt.Sprintf("Результаты квалификации %s:\n%s", qualRace.RaceName, qualifyingResultsToString(qualRace))
+					} else {
+						messageToUser = "Информации о результатах данной квалификации нет. Возможно, она появятся в будущем :)"
+					}
 				} else {
+					qualRace := temp.MRData.RaceTable.Races[0]
 					messageToUser = fmt.Sprintf("Последняя квалификация %s:\n%s", qualRace.RaceName, qualifyingResultsToString(qualRace))
 				}
 
@@ -323,12 +334,49 @@ func main() {
 				json.Unmarshal([]byte(body), &temp)
 
 				if matchedSprRes {
-					sprRace := temp.MRData.RaceTable.Races[0]
-					messageToUser = fmt.Sprintf("Результаты спринт-гонки %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
+					if len(temp.MRData.RaceTable.Races) > 0 {
+						sprRace := temp.MRData.RaceTable.Races[0]
+						messageToUser = fmt.Sprintf("Результаты спринт-гонки %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
+					} else {
+						messageToUser = "Информации о результатах данной спринт-гонки нет. Возможно, она появятся в будущем :)"
+					}
 				} else {
-					sprRace := temp.MRData.RaceTable.Races[len(temp.MRData.RaceTable.Races)-1]
-					messageToUser = fmt.Sprintf("Последняя спринт-гонка %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
+					//sprRace := temp.MRData.RaceTable.Races[len(temp.MRData.RaceTable.Races)-1]
+					//messageToUser = fmt.Sprintf("Последняя спринт-гонка %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
 				}
+
+			case matchedGPs:
+
+				var button Button
+				btnsRow := make([]Button, 0, 4)
+				buttons := [][]Button{}
+
+				for i := 0; i < 9; i++ {
+
+					if i%4 == 0 && i != 0 {
+						buttons = append(buttons, btnsRow)
+						btnsRow = nil
+					}
+					if i == 8 {
+						button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_2", "year":""}`}, Color: "primary"}
+						btnsRow = append(btnsRow, button)
+						buttons = append(buttons, btnsRow)
+					} else {
+						button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+1), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+1)}}
+						btnsRow = append(btnsRow, button)
+					}
+
+				}
+
+				newKeyboard := Kb{false, buttons}
+
+				jsKb, err := json.Marshal(newKeyboard)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				messageToUser = "Этапы F1:"
+				b.Keyboard(string(jsKb))
 
 			default:
 				messageToUser = "Прости, пока что не понимаю тебя. Но я умный и скоро научусь этому!"
@@ -349,6 +397,240 @@ func main() {
 		fmt.Println(respCode)
 		if err != nil {
 			log.Fatal(err)
+		}
+	})
+
+	lp.MessageEvent(func(_ context.Context, obj events.MessageEventObject) {
+		var playload Playload
+		err := json.Unmarshal([]byte(obj.Payload), &playload)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		log.Printf("Playload in MessageEvent: %s \n", playload.Command)
+		matchedGpInfo, _ := regexp.MatchString(`gpPage_\d{1,2}`, playload.Command)
+
+		if playload.Command == "gpListPage_1" {
+			var button Button
+			btnsRow := make([]Button, 0, 4)
+			buttons := [][]Button{}
+
+			for i := 0; i < 9; i++ {
+
+				if i%4 == 0 && i != 0 {
+					buttons = append(buttons, btnsRow)
+					btnsRow = nil
+
+				}
+				if i == 8 {
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_2"}`}, Color: "primary"}
+					btnsRow = append(btnsRow, button)
+					buttons = append(buttons, btnsRow)
+				} else {
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+1), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+1)}}
+					btnsRow = append(btnsRow, button)
+				}
+
+			}
+
+			newKeyboard := Kb{false, buttons}
+
+			jsKb, err := json.Marshal(newKeyboard)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			b := params.NewMessagesSendBuilder()
+			b.Message("Обновление")
+			b.RandomID(0)
+			b.PeerID(obj.PeerID)
+			b.Keyboard(string(jsKb))
+			k, err := vk.MessagesSend(b.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Print(k)
+
+			prms := params.NewMessagesSendMessageEventAnswerBuilder()
+			prms.PeerID(obj.PeerID)
+			prms.EventID(obj.EventID)
+			prms.UserID(obj.UserID)
+			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+		}
+
+		if playload.Command == "gpListPage_2" {
+			var button Button
+			btnsRow := make([]Button, 0, 4)
+			buttons := [][]Button{}
+
+			for i := 0; i < 9; i++ {
+
+				if i%4 == 0 && i != 0 {
+					buttons = append(buttons, btnsRow)
+					btnsRow = nil
+
+				}
+				if i == 8 {
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Назад", Payload: `{"command" : "gpListPage_1"}`}, Color: "primary"}
+					btnsRow = append(btnsRow, button)
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_3"}`}, Color: "primary"}
+					btnsRow = append(btnsRow, button)
+					buttons = append(buttons, btnsRow)
+				} else {
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+9), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+9)}}
+					btnsRow = append(btnsRow, button)
+				}
+
+			}
+
+			keyboard := Kb{false, buttons}
+			jsKb, err := json.Marshal(keyboard)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			b := params.NewMessagesSendBuilder()
+			b.Message("Обновление")
+			b.RandomID(0)
+			b.PeerID(obj.PeerID)
+			b.Keyboard(string(jsKb))
+			//b.ConversationMessageID(obj.ConversationMessageID)
+			k, err := vk.MessagesSend(b.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("%d\n", k)
+
+			prms := params.NewMessagesSendMessageEventAnswerBuilder()
+			prms.PeerID(obj.PeerID)
+			prms.EventID(obj.EventID)
+			prms.UserID(obj.UserID)
+			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+		}
+
+		if playload.Command == "gpListPage_3" {
+			var button Button
+			btnsRow := make([]Button, 0, 4)
+			buttons := [][]Button{}
+
+			for i := 0; i < 7; i++ {
+
+				if i%4 == 0 && i != 0 {
+					buttons = append(buttons, btnsRow)
+					btnsRow = nil
+
+				}
+				if i == 6 {
+					buttons = append(buttons, btnsRow)
+					btnsRow = nil
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Назад", Payload: `{"command" : "gpListPage_2"}`}, Color: "primary"}
+					btnsRow = append(btnsRow, button)
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "В начало", Payload: `{"command" : "gpListPage_1"}`}, Color: "primary"}
+					btnsRow = append(btnsRow, button)
+					buttons = append(buttons, btnsRow)
+				} else {
+					button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+17), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+17)}}
+					btnsRow = append(btnsRow, button)
+				}
+
+			}
+
+			keyboard := Kb{false, buttons}
+			jsKb, err := json.Marshal(keyboard)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			b := params.NewMessagesSendBuilder()
+			b.Message("Обновление")
+			b.RandomID(0)
+			b.PeerID(obj.PeerID)
+			b.Keyboard(string(jsKb))
+
+			k, err := vk.MessagesSend(b.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("%d\n", k)
+
+			prms := params.NewMessagesSendMessageEventAnswerBuilder()
+			prms.PeerID(obj.PeerID)
+			prms.EventID(obj.EventID)
+			prms.UserID(obj.UserID)
+			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+		}
+
+		if matchedGpInfo {
+
+			var reqUrl string
+
+			timeNow := time.Now()
+
+			partsPayload := strings.Split(playload.Command, "_")
+			reqUrl = fmt.Sprintf(
+				"http://ergast.com/api/f1/%d/%s.json",
+				timeNow.Year(),
+				partsPayload[1])
+
+			resp, err := http.Get(reqUrl)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Fatalln(err)
+			}
+
+			var temp Object
+			json.Unmarshal([]byte(body), &temp)
+			curRace := temp.MRData.RaceTable.Races[0]
+			curRace = formatDateTime(curRace)
+
+			slCrsl := make([]CarouselItem, 0, 2)
+			strCrslItem := makeCarouselGPItem(curRace)
+			slCrsl = append(slCrsl, strCrslItem)
+
+			crsl := Carousel{Type: "carousel", Elements: slCrsl}
+			js, myErr := json.Marshal(crsl)
+			if myErr != nil {
+				log.Fatalln(myErr)
+			}
+			fmt.Println(string(js))
+
+			b := params.NewMessagesSendBuilder()
+			b.Message("Информация о гран-при:")
+			b.Template(string(js))
+			b.RandomID(0)
+			b.PeerID(obj.PeerID)
+
+			messId, err := vk.MessagesSend(b.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("%d\n", messId)
+
+			prms := params.NewMessagesSendMessageEventAnswerBuilder()
+			prms.PeerID(obj.PeerID)
+			prms.EventID(obj.EventID)
+			prms.UserID(obj.UserID)
+			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
 		}
 	})
 
@@ -457,27 +739,35 @@ func formatDateTime(race Race) Race {
 	}
 
 	raceDate := parseStringToTime(race.Date, race.Time)
-	fPracticeDate := parseStringToTime(race.FirstPractice.Date, race.FirstPractice.Time)
-	sPracticeDate := parseStringToTime(race.SecondPractice.Date, race.SecondPractice.Time)
-	qualDate := parseStringToTime(race.Qualifying.Date, race.Qualifying.Time)
 
 	race.Date = ruMonth(raceDate.Format("2006-01-02"))
 	race.Time = raceDate.In(tzone).Format("15:04")
 
-	race.FirstPractice.Date = ruMonth(fPracticeDate.Format("2006-01-02"))
-	race.FirstPractice.Time = fPracticeDate.In(tzone).Format("15:04")
+	if race.FirstPractice.Date != "" {
+		fPracticeDate := parseStringToTime(race.FirstPractice.Date, race.FirstPractice.Time)
+		race.FirstPractice.Date = ruMonth(fPracticeDate.Format("2006-01-02"))
+		race.FirstPractice.Time = fPracticeDate.In(tzone).Format("15:04")
 
-	race.SecondPractice.Date = ruMonth(sPracticeDate.Format("2006-01-02"))
-	race.SecondPractice.Time = sPracticeDate.In(tzone).Format("15:04")
+	}
+	if race.SecondPractice.Date != "" {
+		sPracticeDate := parseStringToTime(race.SecondPractice.Date, race.SecondPractice.Time)
+		race.SecondPractice.Date = ruMonth(sPracticeDate.Format("2006-01-02"))
+		race.SecondPractice.Time = sPracticeDate.In(tzone).Format("15:04")
 
-	race.Qualifying.Date = ruMonth(qualDate.Format("2006-01-02"))
-	race.Qualifying.Time = qualDate.In(tzone).Format("15:04")
+	}
+	if race.Qualifying.Date != "" {
+		qualDate := parseStringToTime(race.Qualifying.Date, race.Qualifying.Time)
+		race.Qualifying.Date = ruMonth(qualDate.Format("2006-01-02"))
+		race.Qualifying.Time = qualDate.In(tzone).Format("15:04")
+
+	}
 
 	if len(race.Sprint.Date) > 0 {
 		sprDate := parseStringToTime(race.Sprint.Date, race.Sprint.Time)
 		race.Sprint.Date = ruMonth(sprDate.Format("2006-01-02"))
 		race.Sprint.Time = sprDate.In(tzone).Format("15:04")
-	} else {
+	}
+	if race.ThirdPractice.Date != "" {
 		tPracticeDate := parseStringToTime(race.ThirdPractice.Date, race.ThirdPractice.Time)
 		race.ThirdPractice.Date = ruMonth(tPracticeDate.Format("2006-01-02"))
 		race.ThirdPractice.Time = tPracticeDate.In(tzone).Format("15:04")
@@ -605,38 +895,50 @@ func deleteMention(messageText string) string {
 	return messageText
 }
 
-func makeCarouselGPItem(curRace Race) string {
+func makeCarouselGPItem(curRace Race) CarouselItem {
 	var buttonsArray = make([]Button, 0, 3)
 
 	actionBtn1 := ActionBtn{TypeAction: "text", Label: "Результат гонки", Payload: fmt.Sprintf(`{"command" : "raceRes_%s"}`, curRace.Round)}
 	actionBtn2 := ActionBtn{TypeAction: "text", Label: "Результат квалификации", Payload: fmt.Sprintf(`{"command" : "qualRes_%s"}`, curRace.Round)}
 
-	btn1 := Button{actionBtn1}
-	btn2 := Button{actionBtn2}
-	var btn3 Button
-	if curRace.Sprint.Date != "" {
-		actionBtn3 := ActionBtn{TypeAction: "text", Label: "Результат спринта", Payload: fmt.Sprintf(`{"command" : "sprRes_%s"}`, curRace.Round)}
-		btn3.Action = actionBtn3
-	}
+	btn1 := Button{Action: actionBtn1}
+	btn2 := Button{Action: actionBtn2}
 
 	buttonsArray = append(buttonsArray, btn1, btn2)
+
 	if curRace.Sprint.Date != "" {
+		btn3 := Button{Action: ActionBtn{TypeAction: "text", Label: "Результат спринта", Payload: fmt.Sprintf(`{"command" : "sprRes_%s"}`, curRace.Round)}}
 		buttonsArray = append(buttonsArray, btn3)
 	}
 
 	crslItem := CarouselItem{
 		Title:       curRace.RaceName,
 		Description: fmt.Sprintf("%s\n%s", curRace.Circuit.CircuitName, curRace.Date+", "+curRace.Time),
-		PhotoID:     "-219009582_457239024",
+		PhotoID:     "-219009582_457239025",
 		Action:      ActionBtn{TypeAction: "open_link", Link: curRace.Url},
 		Buttons:     buttonsArray}
-	crsl := Carousel{Type: "carousel", Elements: []CarouselItem{crslItem}}
 
-	jsCrl, err := json.Marshal(crsl)
-	fmt.Println(string(jsCrl))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return string(jsCrl)
+	return crslItem
 }
+
+/* Нужно найти источник с информацией о результатах квалы к спринту
+func makeCarouselQualItem(curRace Race) CarouselItem {
+	var buttonsArray = make([]Button, 0, 2)
+
+	actionBtn1 := ActionBtn{TypeAction: "text", Label: "Результат спринта", Payload: fmt.Sprintf(`{"command" : "sprRes_%s"}`, curRace.Round)}
+	actionBtn2 := ActionBtn{TypeAction: "text", Label: "Результат квалификации-спринта", Payload: fmt.Sprintf(`{"command" : "sprQualRes_%s"}`, curRace.Round)}
+	btn1 := Button{Action: actionBtn1}
+	btn2 := Button{Action: actionBtn2}
+
+	buttonsArray = append(buttonsArray, btn1, btn2)
+
+	crslItem := CarouselItem{
+		Title:       curRace.RaceName,
+		Description: fmt.Sprintf("%s\n%s", curRace.Circuit.CircuitName, curRace.Date+", "+curRace.Time),
+		PhotoID:     "-219009582_457239025",
+		Action:      ActionBtn{TypeAction: "open_link", Link: curRace.Url},
+		Buttons:     buttonsArray}
+
+	return crslItem
+}
+*/

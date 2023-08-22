@@ -35,6 +35,9 @@ var months = map[string]string{
 	"12": "декабря",
 }
 
+var f1memesId = 2000000005
+var f1memesStreamer = 152819213
+
 func init() {
 	if err := godotenv.Load("../.env"); err != nil {
 		log.Print("No .env file found")
@@ -47,20 +50,15 @@ func main() {
 	vk := api.NewVK(token)
 
 	group, err := vk.GroupsGetByID(api.Params{})
-	if err != nil {
-		log.Fatal(err)
-	}
+	errorCheck(err)
 
 	lp, err := longpoll.NewLongPoll(vk, group[0].ID)
-	if err != nil {
-		log.Fatal(err)
-	}
+	errorCheck(err)
 
 	lp.MessageNew(func(_ context.Context, obj events.MessageNewObject) {
 		log.Printf("From id %d: %s", obj.Message.PeerID, obj.Message.Text)
 
 		var messageToUser string
-		var adminStream bool
 		var playload Playload
 
 		userTimestamp := obj.Message.Date
@@ -70,13 +68,9 @@ func main() {
 
 		if obj.Message.Payload != "" {
 			err := json.Unmarshal([]byte(obj.Message.Payload), &playload)
-			if err != nil {
-				log.Fatalln(err)
-			}
+			errorCheck(err)
 		}
 		log.Printf("Command from message: %s \n", playload.Command)
-
-		b := params.NewMessagesSendBuilder()
 
 		matchedDrSt, _ := regexp.MatchString(`личн.*зач[её]т`, messageText)
 		matchedCld, _ := regexp.MatchString(`календар.*сезона`, messageText)
@@ -96,9 +90,9 @@ func main() {
 		matchedQualRes, _ := regexp.MatchString(`qualRes_\d{1,2}`, playload.Command)
 		matchedSprRes, _ := regexp.MatchString(`sprRes_\d{1,2}`, playload.Command)
 
-		if obj.Message.PeerID == 152819213 && matchedStream {
-			adminStream = true
+		if obj.Message.PeerID == f1memesStreamer && matchedStream {
 			messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в VK vk.com/f1memestv."
+			sendMessageToUser(messageToUser, f1memesId, vk, nil, nil)
 
 		} else {
 
@@ -111,6 +105,8 @@ func main() {
 				Для того чтобы подробнее познакомиться с моими возможностями напиши мне "Что умеешь?". 
 				
 				Приятного пользования :)`
+
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
 
 			case matchedHelp:
 				messageToUser =
@@ -125,17 +121,15 @@ func main() {
 				!Внимание! Информация, связанная с проведённой гонкой может обновляться не сразу.
 				Работаем над этим.`
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedDrSt:
 				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/driverStandings.json", userDate.Year()))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var object Object
 				json.Unmarshal([]byte(body), &object)
@@ -143,34 +137,30 @@ func main() {
 
 				messageToUser = fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable))
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedCld:
 				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var races Object
 				json.Unmarshal([]byte(body), &races)
 
 				messageToUser = fmt.Sprintf("Календарь F1, сезон %d:\n%s", userDate.Year(), racesToString(races.MRData.RaceTable.Races))
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedNxRc:
 				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d.json", userDate.Year()))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var races Object
 				json.Unmarshal([]byte(body), &races)
@@ -184,22 +174,22 @@ func main() {
 					messageToUser = fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace)))
 				}
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedConsStFull || matchedConsSt:
 				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/constructorStandings.json", userDate.Year()))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var constructors Object
 				json.Unmarshal([]byte(body), &constructors)
 
 				messageToUser = fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constructors.MRData.StandingsTable.StandingsLists[0].ConstructorStandings))
+
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
 
 			case matchedLstRc || matchedRaceRes:
 				var reqUrl string
@@ -210,15 +200,11 @@ func main() {
 					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/last/results.json", userDate.Year())
 				}
 				resp, err := http.Get(reqUrl)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var lastRace Object
 				json.Unmarshal([]byte(body), &lastRace)
@@ -233,40 +219,34 @@ func main() {
 					messageToUser = fmt.Sprintf("Последняя гонка F1 %s:\n%s", lastRace.MRData.RaceTable.Races[0].RaceName, raceResultsToString(lastRace.MRData.RaceTable.Races[0]))
 				}
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedDaysAfterRace:
 				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last.json", userDate.Year()))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var lastRace Object
 				json.Unmarshal([]byte(body), &lastRace)
 
 				lastRaceDate, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", lastRace.MRData.RaceTable.Races[0].Date, lastRace.MRData.RaceTable.Races[0].Time))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				difference := userDate.Sub(lastRaceDate)
 
 				messageToUser = fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24))
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedLstGP:
 				resp, err := http.Get(fmt.Sprintf("http://ergast.com/api/f1/%d/last.json", userDate.Year()))
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var temp Object
 				json.Unmarshal([]byte(body), &temp)
@@ -274,7 +254,8 @@ func main() {
 				strCrslItem := makeCarouselGPItem(curRace)
 
 				messageToUser = "Информация о гран-при:"
-				b.Template(strCrslItem)
+
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, &strCrslItem)
 
 			case matchedLstQual || matchedQualRes:
 
@@ -286,15 +267,11 @@ func main() {
 					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/last/qualifying.json", userDate.Year())
 				}
 				resp, err := http.Get(reqUrl)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var temp Object
 				json.Unmarshal([]byte(body), &temp)
@@ -311,6 +288,8 @@ func main() {
 					messageToUser = fmt.Sprintf("Последняя квалификация %s:\n%s", qualRace.RaceName, qualifyingResultsToString(qualRace))
 				}
 
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
+
 			case matchedLstSpr || matchedSprRes:
 				var reqUrl string
 				if matchedSprRes {
@@ -320,15 +299,11 @@ func main() {
 					reqUrl = fmt.Sprintf("http://ergast.com/api/f1/%d/sprint.json", userDate.Year())
 				}
 				resp, err := http.Get(reqUrl)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 				defer resp.Body.Close()
 
 				body, err := io.ReadAll(resp.Body)
-				if err != nil {
-					log.Fatalln(err)
-				}
+				errorCheck(err)
 
 				var temp Object
 				json.Unmarshal([]byte(body), &temp)
@@ -344,6 +319,8 @@ func main() {
 					//sprRace := temp.MRData.RaceTable.Races[len(temp.MRData.RaceTable.Races)-1]
 					//messageToUser = fmt.Sprintf("Последняя спринт-гонка %s:\n%s", sprRace.RaceName, sprintResultsToString(sprRace))
 				}
+
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, nil)
 
 			case matchedGPs:
 
@@ -371,73 +348,37 @@ func main() {
 				newKeyboard := Kb{false, buttons}
 
 				jsKb, err := json.Marshal(newKeyboard)
-				if err != nil {
-					log.Fatal(err)
-				}
+				errorCheck(err)
 
 				messageToUser = "Этапы F1:"
-				b.Keyboard(string(jsKb))
+				strKb := string(jsKb)
+
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, &strKb, nil)
 
 			default:
-				messageToUser = "Прости, пока что не понимаю тебя. Но я умный и скоро научусь этому!"
+				log.Printf("Команда в сообщении `%s` не распознана", obj.Message.Text)
 
 			}
 		}
 
-		b.Message(messageToUser)
-		b.RandomID(0)
-
-		if adminStream {
-			b.PeerID(2000000005)
-		} else {
-			b.PeerID(obj.Message.PeerID)
-		}
-
-		respCode, err := vk.MessagesSend(b.Params)
-		fmt.Println(respCode)
-		if err != nil {
-			log.Fatal(err)
-		}
 	})
 
 	lp.MessageEvent(func(_ context.Context, obj events.MessageEventObject) {
+
+		log.Printf("From id %d: %s", obj.PeerID, obj.Payload)
+
 		var playload Playload
 		err := json.Unmarshal([]byte(obj.Payload), &playload)
-		if err != nil {
-			log.Fatalln(err)
-		}
+		errorCheck(err)
 		log.Printf("Playload in MessageEvent: %s \n", playload.Command)
 		matchedGpInfo, _ := regexp.MatchString(`gpPage_\d{1,2}`, playload.Command)
 
 		if playload.Command == "gpListPage_1" {
-			var button Button
-			btnsRow := make([]Button, 0, 4)
-			buttons := [][]Button{}
-
-			for i := 0; i < 9; i++ {
-
-				if i%4 == 0 && i != 0 {
-					buttons = append(buttons, btnsRow)
-					btnsRow = nil
-
-				}
-				if i == 8 {
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_2"}`}, Color: "primary"}
-					btnsRow = append(btnsRow, button)
-					buttons = append(buttons, btnsRow)
-				} else {
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+1), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+1)}}
-					btnsRow = append(btnsRow, button)
-				}
-
-			}
-
-			newKeyboard := Kb{false, buttons}
+			newKeyboard, err := makeKeyboard(2, 4, 1, 22, false)
+			errorCheck(err)
 
 			jsKb, err := json.Marshal(newKeyboard)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 
 			b := params.NewMessagesSendBuilder()
 			b.Message("Обновление")
@@ -445,9 +386,7 @@ func main() {
 			b.PeerID(obj.PeerID)
 			b.Keyboard(string(jsKb))
 			k, err := vk.MessagesSend(b.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Print(k)
 
 			prms := params.NewMessagesSendMessageEventAnswerBuilder()
@@ -455,53 +394,24 @@ func main() {
 			prms.EventID(obj.EventID)
 			prms.UserID(obj.UserID)
 			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
 		}
 
 		if playload.Command == "gpListPage_2" {
-			var button Button
-			btnsRow := make([]Button, 0, 4)
-			buttons := [][]Button{}
+			keyboard, err := makeKeyboard(2, 4, 2, 22, false)
+			errorCheck(err)
 
-			for i := 0; i < 9; i++ {
-
-				if i%4 == 0 && i != 0 {
-					buttons = append(buttons, btnsRow)
-					btnsRow = nil
-
-				}
-				if i == 8 {
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Назад", Payload: `{"command" : "gpListPage_1"}`}, Color: "primary"}
-					btnsRow = append(btnsRow, button)
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_3"}`}, Color: "primary"}
-					btnsRow = append(btnsRow, button)
-					buttons = append(buttons, btnsRow)
-				} else {
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+9), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+9)}}
-					btnsRow = append(btnsRow, button)
-				}
-
-			}
-
-			keyboard := Kb{false, buttons}
 			jsKb, err := json.Marshal(keyboard)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 
 			b := params.NewMessagesSendBuilder()
 			b.Message("Обновление")
 			b.RandomID(0)
 			b.PeerID(obj.PeerID)
 			b.Keyboard(string(jsKb))
-			//b.ConversationMessageID(obj.ConversationMessageID)
 			k, err := vk.MessagesSend(b.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Printf("%d\n", k)
 
 			prms := params.NewMessagesSendMessageEventAnswerBuilder()
@@ -509,44 +419,15 @@ func main() {
 			prms.EventID(obj.EventID)
 			prms.UserID(obj.UserID)
 			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
 		}
 
 		if playload.Command == "gpListPage_3" {
-			var button Button
-			btnsRow := make([]Button, 0, 4)
-			buttons := [][]Button{}
-
-			for i := 0; i < 7; i++ {
-
-				if i%4 == 0 && i != 0 {
-					buttons = append(buttons, btnsRow)
-					btnsRow = nil
-
-				}
-				if i == 6 {
-					buttons = append(buttons, btnsRow)
-					btnsRow = nil
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "Назад", Payload: `{"command" : "gpListPage_2"}`}, Color: "primary"}
-					btnsRow = append(btnsRow, button)
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: "В начало", Payload: `{"command" : "gpListPage_1"}`}, Color: "primary"}
-					btnsRow = append(btnsRow, button)
-					buttons = append(buttons, btnsRow)
-				} else {
-					button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+17), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+17)}}
-					btnsRow = append(btnsRow, button)
-				}
-
-			}
-
-			keyboard := Kb{false, buttons}
+			keyboard, err := makeKeyboard(2, 4, 3, 22, false)
+			errorCheck(err)
 			jsKb, err := json.Marshal(keyboard)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 
 			b := params.NewMessagesSendBuilder()
 			b.Message("Обновление")
@@ -555,9 +436,7 @@ func main() {
 			b.Keyboard(string(jsKb))
 
 			k, err := vk.MessagesSend(b.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Printf("%d\n", k)
 
 			prms := params.NewMessagesSendMessageEventAnswerBuilder()
@@ -565,9 +444,7 @@ func main() {
 			prms.EventID(obj.EventID)
 			prms.UserID(obj.UserID)
 			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
 		}
 
@@ -584,15 +461,11 @@ func main() {
 				partsPayload[1])
 
 			resp, err := http.Get(reqUrl)
-			if err != nil {
-				log.Fatalln(err)
-			}
+			errorCheck(err)
 			defer resp.Body.Close()
 
 			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				log.Fatalln(err)
-			}
+			errorCheck(err)
 
 			var temp Object
 			json.Unmarshal([]byte(body), &temp)
@@ -604,10 +477,8 @@ func main() {
 			slCrsl = append(slCrsl, strCrslItem)
 
 			crsl := Carousel{Type: "carousel", Elements: slCrsl}
-			js, myErr := json.Marshal(crsl)
-			if myErr != nil {
-				log.Fatalln(myErr)
-			}
+			js, err := json.Marshal(crsl)
+			errorCheck(err)
 			fmt.Println(string(js))
 
 			b := params.NewMessagesSendBuilder()
@@ -617,27 +488,17 @@ func main() {
 			b.PeerID(obj.PeerID)
 
 			messId, err := vk.MessagesSend(b.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
+			errorCheck(err)
 			fmt.Printf("%d\n", messId)
 
-			prms := params.NewMessagesSendMessageEventAnswerBuilder()
-			prms.PeerID(obj.PeerID)
-			prms.EventID(obj.EventID)
-			prms.UserID(obj.UserID)
-			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			if err != nil {
-				log.Fatal(err)
-			}
-			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+			sendEventMessageToUser(vk, obj.PeerID, obj.EventID, obj.UserID)
 		}
 	})
 
 	log.Println("Start longpoll")
-	if err := lp.Run(); err != nil {
-		log.Fatal(err)
-	}
+	err = lp.Run()
+	errorCheck(err)
+
 }
 
 func racesToString(races []Race) string {
@@ -734,9 +595,7 @@ func raceResultToString(position Result) string {
 func formatDateTime(race Race) Race {
 
 	tzone, err := time.LoadLocation("Europe/Moscow")
-	if err != nil {
-		log.Fatalln(err)
-	}
+	errorCheck(err)
 
 	raceDate := parseStringToTime(race.Date, race.Time)
 
@@ -778,9 +637,7 @@ func formatDateTime(race Race) Race {
 
 func parseStringToTime(dateRace string, timeRace string) time.Time {
 	tempDateTime, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", dateRace, timeRace))
-	if err != nil {
-		log.Fatalln(err)
-	}
+	errorCheck(err)
 	return tempDateTime
 }
 
@@ -798,9 +655,7 @@ func ruMonth(date string) string {
 
 func checkCurrToLastTime(messageDate int64, race Race) bool {
 	lastRace, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", race.Date, race.Time))
-	if err != nil {
-		log.Fatalln(err)
-	}
+	errorCheck(err)
 
 	if messageDate >= int64(lastRace.Unix()) {
 		return true
@@ -817,9 +672,7 @@ func findNextRace(messageDate int64, races []Race) Race {
 	for num, race := range races {
 
 		tempDateTime, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", race.Date, race.Time))
-		if err != nil {
-			log.Fatalln(err)
-		}
+		errorCheck(err)
 
 		if tempDateTime.After(userDate) {
 			numRace = num
@@ -921,6 +774,48 @@ func makeCarouselGPItem(curRace Race) CarouselItem {
 	return crslItem
 }
 
+func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
+
+	var button Button
+	btnsRow := make([]Button, 0, row)
+	buttons := [][]Button{}
+	sizeKb := row * col
+
+	visKb := countEl - sizeKb*(numPage-1)
+	if visKb > sizeKb {
+		visKb = sizeKb
+	}
+	if visKb <= 0 {
+		return Kb{}, fmt.Errorf("С заданными параметрами невозможно отобразить клавиатуру. Для количества элементов %d не существует %d-ой страницы клавиатуры при %d кнопках", countEl, numPage, sizeKb)
+	}
+	addedNum := sizeKb * (numPage - 1)
+	for i := 1; i <= visKb; i++ {
+		button = Button{Action: ActionBtn{TypeAction: "callback", Label: fmt.Sprintf("%d", i+addedNum), Payload: fmt.Sprintf(`{"command" : "gpPage_%d"}`, i+addedNum)}}
+		btnsRow = append(btnsRow, button)
+
+		if (i%col == 0) || (i == visKb) {
+			buttons = append(buttons, btnsRow)
+			btnsRow = nil
+		}
+	}
+
+	switch numPage {
+	case 1:
+		buttons = append(buttons,
+			[]Button{{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_2", "message_id":""}`}, Color: "primary"}})
+	case 2:
+		buttons = append(buttons,
+			[]Button{{Action: ActionBtn{TypeAction: "callback", Label: "Назад", Payload: `{"command" : "gpListPage_1"}`}, Color: "primary"},
+				{Action: ActionBtn{TypeAction: "callback", Label: "Далее", Payload: `{"command" : "gpListPage_3"}`}, Color: "primary"}})
+	case 3:
+		buttons = append(buttons,
+			[]Button{{Action: ActionBtn{TypeAction: "callback", Label: "Назад", Payload: `{"command" : "gpListPage_2"}`}, Color: "primary"},
+				{Action: ActionBtn{TypeAction: "callback", Label: "В начало", Payload: `{"command" : "gpListPage_1"}`}, Color: "primary"}})
+	}
+
+	return Kb{Inline: inline, Buttons: buttons}, nil
+}
+
 /* Нужно найти источник с информацией о результатах квалы к спринту
 func makeCarouselQualItem(curRace Race) CarouselItem {
 	var buttonsArray = make([]Button, 0, 2)
@@ -942,3 +837,38 @@ func makeCarouselQualItem(curRace Race) CarouselItem {
 	return crslItem
 }
 */
+
+func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard *string, template *CarouselItem) {
+	b := params.NewMessagesSendBuilder()
+	b.Message(messageToUser)
+	b.RandomID(0)
+	b.PeerID(peerID)
+
+	if keyboard != nil {
+		b.Keyboard(&keyboard)
+	}
+	if template != nil {
+		b.Template(&template)
+	}
+
+	respCode, err := vk.MessagesSend(b.Params)
+	fmt.Println(respCode)
+	errorCheck(err)
+}
+
+func sendEventMessageToUser(vk *api.VK, peerID int, eventID string, userID int) {
+	prms := params.NewMessagesSendMessageEventAnswerBuilder()
+	prms.PeerID(peerID)
+	prms.EventID(eventID)
+	prms.UserID(userID)
+	evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
+	fmt.Println(evId)
+	errorCheck(err)
+
+}
+
+func errorCheck(err error) {
+	if err != nil {
+		log.Fatalln(err)
+	}
+}

@@ -252,10 +252,14 @@ func main() {
 				json.Unmarshal([]byte(body), &temp)
 				curRace := formatDateTime(temp.MRData.RaceTable.Races[0])
 				strCrslItem := makeCarouselGPItem(curRace)
+				crsl := Carousel{Type: "carousel", Elements: []CarouselItem{strCrslItem}}
+				jsCrsl, err := json.Marshal(crsl)
+				errorCheck(err)
+				strCrsl := string(jsCrsl)
 
 				messageToUser = "Информация о гран-при:"
 
-				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, &strCrslItem)
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk, nil, &strCrsl)
 
 			case matchedLstQual || matchedQualRes:
 
@@ -379,73 +383,39 @@ func main() {
 
 			jsKb, err := json.Marshal(newKeyboard)
 			errorCheck(err)
+			strKb := string(jsKb)
 
-			b := params.NewMessagesSendBuilder()
-			b.Message("Обновление")
-			b.RandomID(0)
-			b.PeerID(obj.PeerID)
-			b.Keyboard(string(jsKb))
-			k, err := vk.MessagesSend(b.Params)
-			errorCheck(err)
-			fmt.Print(k)
+			messageToUser := "Обновление"
 
-			prms := params.NewMessagesSendMessageEventAnswerBuilder()
-			prms.PeerID(obj.PeerID)
-			prms.EventID(obj.EventID)
-			prms.UserID(obj.UserID)
-			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			errorCheck(err)
-			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+			sendMessageToUser(messageToUser, obj.PeerID, vk, &strKb, nil)
+			sendEventMessageToUser(vk, obj.PeerID, obj.EventID, obj.UserID)
 		}
 
 		if playload.Command == "gpListPage_2" {
-			keyboard, err := makeKeyboard(2, 4, 2, 22, false)
+			newKeyboard, err := makeKeyboard(2, 4, 2, 22, false)
 			errorCheck(err)
 
-			jsKb, err := json.Marshal(keyboard)
+			jsKb, err := json.Marshal(newKeyboard)
 			errorCheck(err)
+			strKb := string(jsKb)
 
-			b := params.NewMessagesSendBuilder()
-			b.Message("Обновление")
-			b.RandomID(0)
-			b.PeerID(obj.PeerID)
-			b.Keyboard(string(jsKb))
-			k, err := vk.MessagesSend(b.Params)
-			errorCheck(err)
-			fmt.Printf("%d\n", k)
+			messageToUser := "Обновление"
 
-			prms := params.NewMessagesSendMessageEventAnswerBuilder()
-			prms.PeerID(obj.PeerID)
-			prms.EventID(obj.EventID)
-			prms.UserID(obj.UserID)
-			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			errorCheck(err)
-			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+			sendMessageToUser(messageToUser, obj.PeerID, vk, &strKb, nil)
+			sendEventMessageToUser(vk, obj.PeerID, obj.EventID, obj.UserID)
 		}
 
 		if playload.Command == "gpListPage_3" {
-			keyboard, err := makeKeyboard(2, 4, 3, 22, false)
+			newKeyboard, err := makeKeyboard(2, 4, 3, 22, false)
 			errorCheck(err)
-			jsKb, err := json.Marshal(keyboard)
+			jsKb, err := json.Marshal(newKeyboard)
 			errorCheck(err)
+			strKb := string(jsKb)
 
-			b := params.NewMessagesSendBuilder()
-			b.Message("Обновление")
-			b.RandomID(0)
-			b.PeerID(obj.PeerID)
-			b.Keyboard(string(jsKb))
+			messageToUser := "Обновление"
 
-			k, err := vk.MessagesSend(b.Params)
-			errorCheck(err)
-			fmt.Printf("%d\n", k)
-
-			prms := params.NewMessagesSendMessageEventAnswerBuilder()
-			prms.PeerID(obj.PeerID)
-			prms.EventID(obj.EventID)
-			prms.UserID(obj.UserID)
-			evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
-			errorCheck(err)
-			fmt.Printf("EventID answer from gpListPage_2: %d\n", evId)
+			sendMessageToUser(messageToUser, obj.PeerID, vk, &strKb, nil)
+			sendEventMessageToUser(vk, obj.PeerID, obj.EventID, obj.UserID)
 		}
 
 		if matchedGpInfo {
@@ -477,20 +447,14 @@ func main() {
 			slCrsl = append(slCrsl, strCrslItem)
 
 			crsl := Carousel{Type: "carousel", Elements: slCrsl}
-			js, err := json.Marshal(crsl)
+			jsCrsl, err := json.Marshal(crsl)
 			errorCheck(err)
-			fmt.Println(string(js))
+			strCrsl := string(jsCrsl)
+			fmt.Println(strCrsl)
 
-			b := params.NewMessagesSendBuilder()
-			b.Message("Информация о гран-при:")
-			b.Template(string(js))
-			b.RandomID(0)
-			b.PeerID(obj.PeerID)
+			messageToUser := "Информация о гран-при:"
 
-			messId, err := vk.MessagesSend(b.Params)
-			errorCheck(err)
-			fmt.Printf("%d\n", messId)
-
+			sendMessageToUser(messageToUser, obj.PeerID, vk, nil, &strCrsl)
 			sendEventMessageToUser(vk, obj.PeerID, obj.EventID, obj.UserID)
 		}
 	})
@@ -838,7 +802,7 @@ func makeCarouselQualItem(curRace Race) CarouselItem {
 }
 */
 
-func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard *string, template *CarouselItem) {
+func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, template *string) {
 	b := params.NewMessagesSendBuilder()
 	b.Message(messageToUser)
 	b.RandomID(0)

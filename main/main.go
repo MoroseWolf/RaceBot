@@ -809,10 +809,10 @@ func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, t
 	b.PeerID(peerID)
 
 	if keyboard != nil {
-		b.Keyboard(&keyboard)
+		b.Keyboard(*keyboard)
 	}
 	if template != nil {
-		b.Template(&template)
+		b.Template(*template)
 	}
 
 	respCode, err := vk.MessagesSend(b.Params)

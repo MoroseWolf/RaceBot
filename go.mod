@@ -1,4 +1,4 @@
-module sample-app
+module racebot-vk
 
 go 1.19
 

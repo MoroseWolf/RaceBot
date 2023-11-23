@@ -14,7 +14,7 @@ const (
 	commandHelp          command = `что умеешь`
 	commandHello         command = `начать`
 	commandDaysAfterRace command = `дней без формулы|F1`
-	commandStream        command = `старт стрим`
+	commandStream        command = `strstart`
 	commandLstGP         command = `ласт гп`
 	commandGPs           command = `этапы`
 	commandRaceRes       command = `raceRes_\d{1,2}`

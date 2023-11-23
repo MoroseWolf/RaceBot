@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	f1memesId       = 2000000005
+	f1memesId       = 2000000003
 	f1memesStreamer = 152819213
 )
 
@@ -90,23 +90,27 @@ func (vk *VkAPI) messageHandler() {
 
 			case commandRaceRes:
 				messageToUser = vk.messageService.GetRaceResultsMessage(userDate, raceId)
-				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+				err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+				if err != nil {
+					log.Flags()
+				}
 
 			case commandQualRes:
 				messageToUser := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
-				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 			case commandSprRes:
 				messageToUser = vk.messageService.GetSprintResultsMessage(userDate, raceId)
-				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 			}
 		} else {
 			command = getCommand(messageText)
 			raceId = "last"
 
-			if obj.Message.PeerID == f1memesStreamer && command == commandStream {
-				messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в VK vk.com/f1memestv."
-				sendMessageToUser(messageToUser, f1memesId, vk.lp.VK, nil, nil)
+			if checkStream(obj.Message.PeerID, command) {
+				streamLink := extractStreamLink(messageText)
+				messageToUser = fmt.Sprint("Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в [vk.com/f1memestv|VK].")
+				sendMessageToUser(messageToUser, f1memesId, vk.lp.VK, nil, nil, &streamLink)
 
 			} else {
 
@@ -119,7 +123,7 @@ func (vk *VkAPI) messageHandler() {
 					Для того чтобы подробнее познакомиться с моими возможностями напиши мне "Что умеешь?". 
 					
 					Приятного пользования :)`
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandHelp:
 					messageToUser =
@@ -133,47 +137,47 @@ func (vk *VkAPI) messageHandler() {
 				
 					!Внимание! Информация, связанная с проведённой гонкой может обновляться не сразу.
 					Работаем над этим.`
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandDrSt:
 					messageToUser = vk.messageService.GetDriverStandingsMessage(userDate)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandCld:
 					messageToUser = vk.messageService.GetCalendarMessage(userDate.Year())
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandNxRc:
 					messageToUser = vk.messageService.GetNextRaceMessage(userDate, userTimestamp)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandConsStFull:
 					messageToUser = vk.messageService.GetConstructorStandingsMessage(userDate)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandConsSt:
 					messageToUser = vk.messageService.GetConstructorStandingsMessage(userDate)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandLstRc:
 					messageToUser = vk.messageService.GetRaceResultsMessage(userDate, raceId)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandLstGP:
 					crsl := vk.messageService.GetGPInfoCarousel(userDate, raceId)
-					sendMessageToUser("Информация о гран-при:", obj.Message.PeerID, vk.lp.VK, nil, &crsl)
+					sendMessageToUser("Информация о гран-при:", obj.Message.PeerID, vk.lp.VK, nil, &crsl, nil)
 
 				case commandGPs:
 					kb := vk.messageService.GetGPKeyboard()
-					sendMessageToUser("Этапы F1:", obj.Message.PeerID, vk.lp.VK, &kb, nil)
+					sendMessageToUser("Этапы F1:", obj.Message.PeerID, vk.lp.VK, &kb, nil, nil)
 
 				case commandDaysAfterRace:
 					messageToUser := vk.messageService.GetCountDaysAfterRaceMessage(userDate, raceId)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 
 				case commandLstQual:
 					messageToUser := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil)
+					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 				default:
 					log.Printf("Команда в сообщении `%s` не распознана", obj.Message.Text)
 
@@ -208,7 +212,7 @@ func (vk *VkAPI) eventHandler() {
 
 			messageToUser := "Обновление"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil)
+			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
 			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
 
 		case commandGpList2:
@@ -225,7 +229,7 @@ func (vk *VkAPI) eventHandler() {
 
 			messageToUser := "Обновление"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil)
+			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
 			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
 
 		case commandGpList3:
@@ -242,7 +246,7 @@ func (vk *VkAPI) eventHandler() {
 
 			messageToUser := "Обновление"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil)
+			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
 			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
 
 		case commandGpInfo:
@@ -256,14 +260,14 @@ func (vk *VkAPI) eventHandler() {
 
 			messageToUser := "Информация о гран-при:"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, nil, &curRace)
+			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, nil, &curRace, nil)
 			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
 
 		}
 	})
 }
 
-func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, template *string) {
+func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, template, attachment *string) error {
 	b := params.NewMessagesSendBuilder()
 	b.Message(messageToUser)
 	b.RandomID(0)
@@ -276,12 +280,16 @@ func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, t
 		b.Template(*template)
 	}
 
-	msgId, err := vk.MessagesSend(b.Params)
-	if err != nil {
-		fmt.Errorf("Error sending message to user: %w", err)
+	if attachment != nil {
+		b.Attachment(*attachment)
 	}
 
-	fmt.Println(msgId)
+	msgId, err := vk.MessagesSend(b.Params)
+	if err != nil {
+		return fmt.Errorf("Error sending message to user: %w", err)
+	}
+	fmt.Printf("Message-answer ID: %d\n", msgId)
+	return nil
 }
 
 func sendEventMessageToUser(vk *api.VK, peerID int, eventID string, userID int) {
@@ -351,6 +359,20 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 	}
 
 	return Kb{Inline: inline, Buttons: buttons}, nil
+}
+
+func checkStream(id int, command command) bool {
+	if id == f1memesStreamer && command == commandStream {
+		return true
+	}
+	return false
+}
+
+func extractStreamLink(messageText string) string {
+	msgParts := strings.Split(messageText, " ")
+	//link := fmt.Sprintf("[%s|VK]", strings.TrimPrefix(msgParts[1], "https://vk.com/"))
+	link := fmt.Sprintf("%s", strings.TrimPrefix(msgParts[1], "https://vk.com/"))
+	return link
 }
 
 // ----------------------------------

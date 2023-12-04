@@ -47,12 +47,12 @@ func NewVKAPI(token string, messageService messageService, eventService eventSer
 
 	group, err := vk.GroupsGetByID(api.Params{})
 	if err != nil {
-		return nil, fmt.Errorf("Error groups get by id: %w", err)
+		return nil, fmt.Errorf("error groups get by id: %w", err)
 	}
 
 	lp, err := longpoll.NewLongPoll(vk, group[0].ID)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating new log pool: %w", err)
+		return nil, fmt.Errorf("error creating new log pool: %w", err)
 	}
 
 	return &VkAPI{lp: lp, messageService: messageService, eventService: eventService}, nil
@@ -81,7 +81,11 @@ func (vk *VkAPI) messageHandler() {
 
 		messageText := strings.ToLower(obj.Message.Text)
 
-		textPayload := extractCommand(obj.Message.Payload)
+		textPayload, err := extractCommand(obj.Message.Payload)
+		if err != nil {
+			log.Printf("Error reading payload: %v", err)
+		}
+
 		if textPayload != nil {
 			command = getCommand(*textPayload)
 			raceId = (strings.Split(*textPayload, "_"))[1]
@@ -92,16 +96,22 @@ func (vk *VkAPI) messageHandler() {
 				messageToUser = vk.messageService.GetRaceResultsMessage(userDate, raceId)
 				err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 				if err != nil {
-					log.Flags()
+					log.Printf("Error with sending message-answer to command `commandRaceRes` to user %d: %s", obj.Message.PeerID, err)
 				}
 
 			case commandQualRes:
 				messageToUser := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
-				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+				err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+				if err != nil {
+					log.Printf("Error with sending message-answer to command `commandQualRes` to user %d: %s", obj.Message.PeerID, err)
+				}
 
 			case commandSprRes:
 				messageToUser = vk.messageService.GetSprintResultsMessage(userDate, raceId)
-				sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+				err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+				if err != nil {
+					log.Printf("Error with sending message-answer to command `commandSprRes` to user %d: %v", obj.Message.PeerID, err)
+				}
 			}
 		} else {
 			command = getCommand(messageText)
@@ -109,8 +119,11 @@ func (vk *VkAPI) messageHandler() {
 
 			if checkStream(obj.Message.PeerID, command) {
 				streamLink := extractStreamLink(messageText)
-				messageToUser = fmt.Sprint("Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в [vk.com/f1memestv|VK].")
-				sendMessageToUser(messageToUser, f1memesId, vk.lp.VK, nil, nil, &streamLink)
+				messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в [vk.com/f1memestv|VK]."
+				err := sendMessageToUser(messageToUser, f1memesId, vk.lp.VK, nil, nil, &streamLink)
+				if err != nil {
+					log.Printf("Error with sending message-answer to command `checkStream` to user %d: %v", obj.Message.PeerID, err)
+				}
 
 			} else {
 
@@ -123,7 +136,10 @@ func (vk *VkAPI) messageHandler() {
 					Для того чтобы подробнее познакомиться с моими возможностями напиши мне "Что умеешь?". 
 					
 					Приятного пользования :)`
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `Hello` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandHelp:
 					messageToUser =
@@ -137,47 +153,80 @@ func (vk *VkAPI) messageHandler() {
 				
 					!Внимание! Информация, связанная с проведённой гонкой может обновляться не сразу.
 					Работаем над этим.`
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandHelp` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandDrSt:
 					messageToUser = vk.messageService.GetDriverStandingsMessage(userDate)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandDrSt` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandCld:
 					messageToUser = vk.messageService.GetCalendarMessage(userDate.Year())
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandCld` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandNxRc:
 					messageToUser = vk.messageService.GetNextRaceMessage(userDate, userTimestamp)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandNxRc` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandConsStFull:
 					messageToUser = vk.messageService.GetConstructorStandingsMessage(userDate)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandConsStFull` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandConsSt:
 					messageToUser = vk.messageService.GetConstructorStandingsMessage(userDate)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandConsSt` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandLstRc:
 					messageToUser = vk.messageService.GetRaceResultsMessage(userDate, raceId)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandLstRc` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandLstGP:
 					crsl := vk.messageService.GetGPInfoCarousel(userDate, raceId)
-					sendMessageToUser("Информация о гран-при:", obj.Message.PeerID, vk.lp.VK, nil, &crsl, nil)
+					err := sendMessageToUser("Информация о гран-при:", obj.Message.PeerID, vk.lp.VK, nil, &crsl, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandLstGP` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandGPs:
 					kb := vk.messageService.GetGPKeyboard()
-					sendMessageToUser("Этапы F1:", obj.Message.PeerID, vk.lp.VK, &kb, nil, nil)
+					err := sendMessageToUser("Этапы F1:", obj.Message.PeerID, vk.lp.VK, &kb, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandGPs` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandDaysAfterRace:
 					messageToUser := vk.messageService.GetCountDaysAfterRaceMessage(userDate, raceId)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandDaysAfterRace` to user %d: %v", obj.Message.PeerID, err)
+					}
 
 				case commandLstQual:
 					messageToUser := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
-					sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Printf("Error with sending message-answer to command `commandLstQual` to user %d: %v", obj.Message.PeerID, err)
+					}
 				default:
 					log.Printf("Команда в сообщении `%s` не распознана", obj.Message.Text)
 
@@ -193,7 +242,10 @@ func (vk *VkAPI) eventHandler() {
 
 		log.Printf("From id %d: %s", obj.PeerID, obj.Payload)
 
-		payloadCommand := extractCommand(string(obj.Payload))
+		payloadCommand, err := extractCommand(string(obj.Payload))
+		if err != nil {
+			log.Printf("Error reading payload: %v", err)
+		}
 		command := getEventCommand(*payloadCommand)
 
 		switch command {
@@ -201,53 +253,74 @@ func (vk *VkAPI) eventHandler() {
 		case commandGpList1:
 			newKeyboard, err := makeKeyboard(2, 4, 1, 22, false)
 			if err != nil {
-				fmt.Errorf("Error making keyboard: %w", err)
+				log.Printf("Error making keyboard: %v", err)
 			}
 
 			jsKb, err := json.Marshal(newKeyboard)
 			if err != nil {
-				fmt.Errorf("Error marshall keyboard: %w", err)
+				log.Printf("Error marshall keyboard: %v", err)
 			}
 			strKb := string(jsKb)
 
 			messageToUser := "Обновление"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
-			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			err = sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
+			if err != nil {
+				log.Printf("Error with sending message-answer to command `commandGpList1` to user %d: %v", obj.PeerID, err)
+			}
+
+			err = sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			if err != nil {
+				log.Printf("Error with sending event-answer to command `commandGpList1` to user %d: %v", obj.PeerID, err)
+			}
 
 		case commandGpList2:
 			newKeyboard, err := makeKeyboard(2, 4, 2, 22, false)
 			if err != nil {
-				fmt.Errorf("Error making keyboard: %w", err)
+				log.Printf("Error making keyboard: %v", err)
 			}
 
 			jsKb, err := json.Marshal(newKeyboard)
 			if err != nil {
-				fmt.Errorf("Error marshall keyboard: %w", err)
+				log.Printf("Error marshall keyboard: %v", err)
 			}
 			strKb := string(jsKb)
 
 			messageToUser := "Обновление"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
-			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			err = sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
+			if err != nil {
+				log.Printf("Error with sending message-answer to command `commandGpList2` to user %d: %v", obj.PeerID, err)
+			}
+
+			err = sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			if err != nil {
+				log.Printf("Error with sending event-answer to command `commandGpList2` to user %d: %v", obj.PeerID, err)
+			}
 
 		case commandGpList3:
 			newKeyboard, err := makeKeyboard(2, 4, 3, 22, false)
 			if err != nil {
-				fmt.Errorf("Error making keyboard: %w", err)
+				log.Printf("Error making keyboard: %v", err)
 			}
 
 			jsKb, err := json.Marshal(newKeyboard)
 			if err != nil {
-				fmt.Errorf("Error marshall keyboard: %w", err)
+				log.Printf("Error marshall keyboard: %v", err)
 			}
 			strKb := string(jsKb)
 
 			messageToUser := "Обновление"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
-			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			err = sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, &strKb, nil, nil)
+			if err != nil {
+				log.Printf("Error with sending message-answer to command `commandGpList3` to user %d: %v", obj.PeerID, err)
+			}
+
+			err = sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			if err != nil {
+				log.Printf("Error with sending event-answer to command `commandGpList3` to user %d: %v", obj.PeerID, err)
+			}
 
 		case commandGpInfo:
 
@@ -260,8 +333,14 @@ func (vk *VkAPI) eventHandler() {
 
 			messageToUser := "Информация о гран-при:"
 
-			sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, nil, &curRace, nil)
-			sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			err := sendMessageToUser(messageToUser, obj.PeerID, vk.lp.VK, nil, &curRace, nil)
+			if err != nil {
+				log.Printf("Error with sending message-answer to command `commandGpInfo` to user %d: %v", obj.PeerID, err)
+			}
+			err = sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
+			if err != nil {
+				log.Printf("Error with sending event-answer to command `commandGpInfo` to user %d: %v", obj.PeerID, err)
+			}
 
 		}
 	})
@@ -286,13 +365,13 @@ func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, t
 
 	msgId, err := vk.MessagesSend(b.Params)
 	if err != nil {
-		return fmt.Errorf("Error sending message to user: %w", err)
+		return fmt.Errorf("error sending message to user: %w", err)
 	}
 	fmt.Printf("Message-answer ID: %d\n", msgId)
 	return nil
 }
 
-func sendEventMessageToUser(vk *api.VK, peerID int, eventID string, userID int) {
+func sendEventMessageToUser(vk *api.VK, peerID int, eventID string, userID int) error {
 	prms := params.NewMessagesSendMessageEventAnswerBuilder()
 	prms.PeerID(peerID)
 	prms.EventID(eventID)
@@ -301,21 +380,23 @@ func sendEventMessageToUser(vk *api.VK, peerID int, eventID string, userID int) 
 	evId, err := vk.MessagesSendMessageEventAnswer(prms.Params)
 	fmt.Println(evId)
 	if err != nil {
-		fmt.Errorf("Error sending message to user: %w", err)
+		return fmt.Errorf("error sending message to user: %w", err)
 	}
+
+	return nil
 }
 
-func extractCommand(payload string) *string {
+func extractCommand(payload string) (*string, error) {
 	var pl Payload
 	if payload != "" {
 		err := json.Unmarshal([]byte(payload), &pl)
 		if err != nil {
-			fmt.Errorf("Error reading command in payload message: %w", err)
+			return nil, fmt.Errorf("error unmarshal command in payload message: %w", err)
 		}
-		log.Printf("Command from paylpad: %s \n", pl.Command)
-		return &pl.Command
+		log.Printf("Command from paylpad: %s\n", pl.Command)
+		return &pl.Command, nil
 	} else {
-		return nil
+		return nil, nil
 	}
 }
 
@@ -331,7 +412,7 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 		visKb = sizeKb
 	}
 	if visKb <= 0 {
-		return Kb{}, fmt.Errorf("С заданными параметрами невозможно отобразить клавиатуру. Для количества элементов %d не существует %d-ой страницы клавиатуры при %d кнопках", countEl, numPage, sizeKb)
+		return Kb{}, fmt.Errorf("с заданными параметрами невозможно отобразить клавиатуру. Для количества элементов %d не существует %d-ой страницы клавиатуры при %d кнопках", countEl, numPage, sizeKb)
 	}
 	addedNum := sizeKb * (numPage - 1)
 	for i := 1; i <= visKb; i++ {
@@ -362,7 +443,7 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 }
 
 func checkStream(id int, command command) bool {
-	if id == f1memesStreamer && command == commandStream {
+	if (id == f1memesStreamer) && (command == commandStream) {
 		return true
 	}
 	return false
@@ -371,7 +452,7 @@ func checkStream(id int, command command) bool {
 func extractStreamLink(messageText string) string {
 	msgParts := strings.Split(messageText, " ")
 	//link := fmt.Sprintf("[%s|VK]", strings.TrimPrefix(msgParts[1], "https://vk.com/"))
-	link := fmt.Sprintf("%s", strings.TrimPrefix(msgParts[1], "https://vk.com/"))
+	link := strings.TrimPrefix(msgParts[1], "https://vk.com/")
 	return link
 }
 

@@ -2,10 +2,14 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"racebot-vk/models"
+	"racebot-vk/temperrors"
 	vk_api "racebot-vk/vk"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -27,10 +31,10 @@ var months = map[string]string{
 }
 
 type f1Storage interface {
-	GetDriverStandings(userDate time.Time) []models.DriverStandingsItem
-	GetCalendar(year int) []models.Race
-	GetConstructorStandings(userDate time.Time) []models.ConstructorStandingsItem
-	GetRaceResults(userDate time.Time, raceId string) []models.Race
+	GetDriverStandings(userDate time.Time) ([]models.DriverStandingsItem, error)
+	GetCalendar(year int) ([]models.Race, error)
+	GetConstructorStandings(userDate time.Time) ([]models.ConstructorStandingsItem, error)
+	GetRaceResults(userDate time.Time, raceId string) ([]models.Race, error)
 	GetGPInfo(userDate time.Time, raceId string) []models.Race
 	GetQualifyingResults(userDate time.Time, raceId string) []models.Race
 	GetSprintResults(userDate time.Time, raceId string) []models.Race
@@ -44,45 +48,106 @@ func NewServiceF1(storage f1Storage) *ServiceF1 {
 	return &ServiceF1{storage}
 }
 
-func (s *ServiceF1) GetDriverStandingsMessage(userDate time.Time) string {
-	driversTable := s.storage.GetDriverStandings(userDate)
-	return fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable))
+func (s *ServiceF1) GetDriverStandingsMessage(userDate time.Time) (string, error) {
+	driversTable, err := s.storage.GetDriverStandings(userDate)
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			return "Личный зачёт еще не сформирован.", nil
+		} else {
+			slog.Error("%w", err)
+			return "", err
+		}
+	}
+	return fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable)), nil
 }
 
-func (s *ServiceF1) GetCalendarMessage(year int) string {
-	calendar := s.storage.GetCalendar(year)
-	return fmt.Sprintf("Календарь F1, сезон %d:\n%s", year, racesToString(calendar))
+func (s *ServiceF1) GetCalendarMessage(year int) (string, error) {
+	calendar, err := s.storage.GetCalendar(year)
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			return "Календарь еще не сформирован.", nil
+		} else {
+			slog.Error("%w", err)
+			return "", err
+		}
+	}
+	return fmt.Sprintf("Календарь F1, сезон %d:\n%s", year, racesToString(calendar)), nil
 }
 
-func (s *ServiceF1) GetNextRaceMessage(userDate time.Time, userTimestamp int) string {
-	calendar := s.storage.GetCalendar(userDate.Year())
+func (s *ServiceF1) GetNextRaceMessage(userDate time.Time, userTimestamp int) (string, error) {
+	year := userDate.Year()
+	calendar, err := s.storage.GetCalendar(year)
+	if err != nil {
 
-	isAfter := checkCurrToLastTime(int64(userTimestamp), calendar[len(calendar)-1])
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			return "Календарь еще не сформирован.", nil
+		} else {
+			slog.Error("%w", err)
+			return "", err
+		}
+	}
 
+	isAfter, err := checkCurrToLastTime(int64(userTimestamp), calendar[len(calendar)-1])
+	if err != nil {
+		return "", err
+	}
 	if isAfter {
-		return "Сезон закончился!"
+		return "Сезон закончился!", nil
 	} else {
 		nextRace := findNextRace(int64(userTimestamp), calendar)
-		return fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace)))
+		return fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace))), nil
 	}
 }
 
-func (s *ServiceF1) GetConstructorStandingsMessage(userDate time.Time) string {
-	constStr := s.storage.GetConstructorStandings(userDate)
-	return fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constStr))
+func (s *ServiceF1) GetConstructorStandingsMessage(userDate time.Time) (string, error) {
+	constStr, err := s.storage.GetConstructorStandings(userDate)
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			return "Кубок конструктора еще не сформирован.", nil
+		} else {
+			slog.Error("%w", err)
+			return "", err
+		}
+	}
+	return fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constStr)), nil
 }
 
-func (s *ServiceF1) GetRaceResultsMessage(userDate time.Time, raceId string) string {
-	results := s.storage.GetRaceResults(userDate, raceId)
+func (s *ServiceF1) GetRaceResultsMessage(userDate time.Time, raceId string) (string, error) {
+	results, err := s.storage.GetRaceResults(userDate, raceId)
+	if err != nil {
 
+		if errors.Is(err, temperrors.ErrEmptyList) {
+
+			if raceId != "last" {
+				tmpId, tmpErr := strconv.Atoi(raceId)
+				if tmpErr != nil {
+					return "", err
+				}
+
+				tmpId -= 1
+				str, tmpErr := s.GetRaceResultsMessage(userDate, strconv.Itoa(tmpId))
+				return str, tmpErr
+			}
+			results, _ = s.storage.GetRaceResults(userDate.AddDate(-1, 0, 0), raceId)
+
+		} else {
+			return "Информации о результатах данной гонки нет. Возможно она появится в будущем :)", err
+		}
+	}
 	if raceId == "last" {
-		return fmt.Sprintf("Последняя гонка F1 %s:\n%s", results[0].RaceName, raceResultsToString(results[0]))
-	}
-	if len(results) > 0 {
-		return fmt.Sprintf("Результаты гонки %s:\n%s", results[0].RaceName, raceResultsToString(results[0]))
+		return fmt.Sprintf("Последняя гонка F1 %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
 	} else {
-		return "Информации о результатах данной квалификации нет. Возможно она появится в будущем :)"
+		return fmt.Sprintf("Результаты гонки %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
 	}
+
+	/*if len(results) > 0 {
+		return fmt.Sprintf("Результаты гонки %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
+	} else {
+		return "", nil
+	}*/
 }
 
 func (s *ServiceF1) GetGPInfoCarousel(userDate time.Time, raceId string) string {
@@ -250,10 +315,16 @@ func formatDateTime(race models.Race) models.Race {
 		log.Fatalln(err)
 	}
 
-	raceDate := parseStringToTime(race.Date, race.Time)
+	var raceDate time.Time
 
-	race.Date = ruMonth(raceDate.Format("2006-01-02"))
-	race.Time = raceDate.In(tzone).Format("15:04")
+	if race.Time != "" {
+		raceDate = parseStringToTime(race.Date, race.Time)
+		race.Date = ruMonth(raceDate.Format("2006-01-02"))
+		race.Time = raceDate.In(tzone).Format("15:04")
+	} else {
+		race.Date = ruMonth(race.Date)
+		race.Time = "неизвестно"
+	}
 
 	if race.FirstPractice.Date != "" {
 		fPracticeDate := parseStringToTime(race.FirstPractice.Date, race.FirstPractice.Time)
@@ -329,16 +400,28 @@ func findNextRace(messageDate int64, races []models.Race) models.Race {
 	return races[numRace]
 }
 
-func checkCurrToLastTime(messageDate int64, race models.Race) bool {
-	lastRace, err := time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", race.Date, race.Time))
+func checkCurrToLastTime(messageDate int64, race models.Race) (bool, error) {
+
+	var lastRace time.Time
+	var err error
+
+	if race.Date == "" {
+		return false, errors.New("empty date in race")
+	}
+
+	if race.Time == "" {
+		lastRace, err = time.Parse("2006-01-02", fmt.Sprint(race.Date))
+	} else {
+		lastRace, err = time.Parse("2006-01-02 15:04:05Z", fmt.Sprintf("%s %s", race.Date, race.Time))
+	}
 	if err != nil {
-		fmt.Errorf("Error creating date and time: %w", err)
+		return false, fmt.Errorf("Error creating date and time: %w", err)
 	}
 
 	if messageDate >= int64(lastRace.Unix()) {
-		return true
+		return true, nil
 	} else {
-		return false
+		return false, nil
 	}
 }
 

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"racebot-vk/ergast"
 	"racebot-vk/service"
@@ -12,22 +12,32 @@ import (
 
 func init() {
 	if err := godotenv.Load("../.env"); err != nil {
-		log.Print("No .env file found")
+		slog.Error("No .env file found")
 	}
 }
 
 func main() {
 
-	token, _ := os.LookupEnv("RACEVK_BOT")
+	log := setupLogger()
+
+	token, ok := os.LookupEnv("RACEVK_BOT")
+	if !ok {
+		log.Error("Error getting environment with key")
+	} else {
+		log.Info("OK load key environment")
+	}
 
 	ergastAPI := ergast.NewErgastAPI()
-
 	service := service.NewServiceF1(ergastAPI)
 
 	vkAPI, err := vk_api.NewVKAPI(token, service, service)
 	if err != nil {
-		log.Fatalln(err)
+		log.Error("Error vkApi object")
 	}
 
-	vkAPI.Run()
+	vkAPI.Run(log)
+}
+
+func setupLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, nil))
 }

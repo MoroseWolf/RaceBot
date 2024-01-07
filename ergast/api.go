@@ -90,7 +90,7 @@ func getRequest(url string) (models.Object, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return temp, fmt.Errorf("error in getRequest", err)
+		return temp, fmt.Errorf("error in getRequest %w", err)
 	} else {
 		slog.Info("OK get request")
 	}
@@ -98,7 +98,7 @@ func getRequest(url string) (models.Object, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return temp, fmt.Errorf("error reading responce", err)
+		return temp, fmt.Errorf("error reading responce %w", err)
 	}
 
 	json.Unmarshal([]byte(body), &temp)

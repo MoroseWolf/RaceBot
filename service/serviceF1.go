@@ -35,8 +35,8 @@ type f1Storage interface {
 	GetCalendar(year int) ([]models.Race, error)
 	GetConstructorStandings(userDate time.Time) ([]models.ConstructorStandingsItem, error)
 	GetRaceResults(userDate time.Time, raceId string) ([]models.Race, error)
-	GetGPInfo(userDate time.Time, raceId string) []models.Race
-	GetQualifyingResults(userDate time.Time, raceId string) []models.Race
+	GetGPInfo(userDate time.Time, raceId string) ([]models.Race, error)
+	GetQualifyingResults(userDate time.Time, raceId string) ([]models.Race, error)
 	GetSprintResults(userDate time.Time, raceId string) []models.Race
 }
 
@@ -150,16 +150,30 @@ func (s *ServiceF1) GetRaceResultsMessage(userDate time.Time, raceId string) (st
 	}*/
 }
 
-func (s *ServiceF1) GetGPInfoCarousel(userDate time.Time, raceId string) string {
-	lastGP := formatDateTime((s.storage.GetGPInfo(userDate, raceId))[0])
+func (s *ServiceF1) GetGPInfoCarousel(userDate time.Time, raceId string) (string, error) {
+	races, err := s.storage.GetGPInfo(userDate, raceId)
+
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			races, _ = s.storage.GetGPInfo(userDate.AddDate(-1, 0, 0), raceId)
+
+		} else {
+			return "", err
+		}
+
+	}
+
+	lastGP := formatDateTime(races[0])
 
 	strCrslItem := makeCarouselGPItem(lastGP)
 	crsl := vk_api.Carousel{Type: "carousel", Elements: []vk_api.CarouselItem{strCrslItem}}
 	jsCrsl, err := json.Marshal(crsl)
 	if err != nil {
-		fmt.Errorf("Error marshal carousel: %w", err)
+		return "", fmt.Errorf("error marshal carousel: %w", err)
 	}
-	return string(jsCrsl)
+
+	return string(jsCrsl), nil
 }
 
 func (s *ServiceF1) GetGPKeyboard() string {
@@ -184,7 +198,7 @@ func (s *ServiceF1) GetGPKeyboard() string {
 
 	}
 
-	newKeyboard := vk_api.Kb{false, buttons}
+	newKeyboard := vk_api.Kb{Inline: false, Buttons: buttons}
 
 	jsKb, err := json.Marshal(newKeyboard)
 	if err != nil {
@@ -194,25 +208,43 @@ func (s *ServiceF1) GetGPKeyboard() string {
 	return string(jsKb)
 }
 
-func (s *ServiceF1) GetCountDaysAfterRaceMessage(userDate time.Time, raceId string) string {
-	lastRace := (s.storage.GetGPInfo(userDate, raceId))[0]
+func (s *ServiceF1) GetCountDaysAfterRaceMessage(userDate time.Time, raceId string) (string, error) {
+
+	races, err := s.storage.GetGPInfo(userDate, raceId)
+
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			races, _ = s.storage.GetGPInfo(userDate.AddDate(-1, 0, 0), raceId)
+		} else {
+			return "", err
+		}
+
+	}
+	lastRace := races[0]
 
 	lastRaceDate := parseStringToTime(lastRace.Date, lastRace.Time)
 	difference := userDate.Sub(lastRaceDate)
 
-	return fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24))
+	return fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24)), nil
 }
 
-func (s *ServiceF1) GetQualifyingResultsMessage(userDate time.Time, raceId string) string {
-	qualRes := s.storage.GetQualifyingResults(userDate, raceId)
+func (s *ServiceF1) GetQualifyingResultsMessage(userDate time.Time, raceId string) (string, error) {
+	qualRes, err := s.storage.GetQualifyingResults(userDate, raceId)
+
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			qualRes, _ = s.storage.GetQualifyingResults(userDate.AddDate(-1, 0, 0), raceId)
+		} else {
+			return "", err
+		}
+	}
 
 	if raceId == "last" {
-		return fmt.Sprintf("Последняя квалификация %s:\n%s", qualRes[0].RaceName, qualifyingResultsToString(qualRes[0]))
-	}
-	if len(qualRes) > 0 {
-		return fmt.Sprintf("Результаты квалификации %s:\n%s", qualRes[0].RaceName, qualifyingResultsToString(qualRes[0]))
+		return fmt.Sprintf("Последняя квалификация %s:\n%s", qualRes[0].RaceName, qualifyingResultsToString(qualRes[0])), nil
 	} else {
-		return "Информации о результатах данной квалификации нет. Возможно она появится в будущем :)"
+		return fmt.Sprintf("Результаты квалификации %s:\n%s", qualRes[0].RaceName, qualifyingResultsToString(qualRes[0])), nil
 	}
 }
 

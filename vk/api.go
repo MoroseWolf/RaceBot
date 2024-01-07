@@ -25,15 +25,15 @@ type messageService interface {
 	GetNextRaceMessage(userDate time.Time, userTimestamp int) (string, error)
 	GetConstructorStandingsMessage(uerDate time.Time) (string, error)
 	GetRaceResultsMessage(userDate time.Time, raceId string) (string, error)
-	GetGPInfoCarousel(userDate time.Time, raceId string) string
+	GetGPInfoCarousel(userDate time.Time, raceId string) (string, error)
 	GetGPKeyboard() string
-	GetCountDaysAfterRaceMessage(userDate time.Time, raceId string) string
+	GetCountDaysAfterRaceMessage(userDate time.Time, raceId string) (string, error)
 	GetQualifyingResultsMessage(userDate time.Time, raceId string) string
 	GetSprintResultsMessage(userDate time.Time, raceId string) string
 }
 
 type eventService interface {
-	GetGPInfoCarousel(userDate time.Time, raceId string) string
+	GetGPInfoCarousel(userDate time.Time, raceId string) (string, error)
 }
 
 type VkAPI struct {
@@ -232,7 +232,11 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
 				case commandLstGP:
-					crsl := vk.messageService.GetGPInfoCarousel(userDate, raceId)
+					crsl, err := vk.messageService.GetGPInfoCarousel(userDate, raceId)
+					if err != nil {
+						log.Error("Error with last gp", err)
+					}
+
 					resp, err := sendMessageToUser("Информация о гран-при:", obj.Message.PeerID, vk.lp.VK, nil, &crsl, nil)
 					if err != nil {
 						log.Error("Error with sending message-answer to command `commandLstGP` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
@@ -260,7 +264,11 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
 				case commandDaysAfterRace:
-					messageToUser := vk.messageService.GetCountDaysAfterRaceMessage(userDate, raceId)
+					messageToUser, err := vk.messageService.GetCountDaysAfterRaceMessage(userDate, raceId)
+					if err != nil {
+						log.Error("Error with sending message-answer to command `commandDaysAfterRace` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					}
+
 					resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 					if err != nil {
 						log.Error("Error with sending message-answer to command `commandDaysAfterRace` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
@@ -348,8 +356,10 @@ func (vk *VkAPI) eventHandler(log *slog.Logger) {
 			timeNow := time.Now()
 			number := strings.Split(*payloadCommand, "_")
 
-			curRace := vk.eventService.GetGPInfoCarousel(timeNow, number[1])
-
+			curRace, err := vk.eventService.GetGPInfoCarousel(timeNow, number[1])
+			if err != nil {
+				log.Error("Error with getGPInfoCarousel", err)
+			}
 			fmt.Println(curRace)
 
 			messageToUser := "Информация о гран-при:"

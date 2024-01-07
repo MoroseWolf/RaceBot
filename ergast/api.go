@@ -35,7 +35,7 @@ func (erg *ErgastAPI) GetDriverStandings(userDate time.Time) ([]models.DriverSta
 func (erg *ErgastAPI) GetCalendar(year int) ([]models.Race, error) {
 	resp, err := getRequest(fmt.Sprintf("%s/%d.json", erg.url, year))
 	if err != nil {
-		slog.Info(err.Error())
+		slog.Error(err.Error())
 		return nil, fmt.Errorf("in calendar %w", err)
 	}
 	if len(resp.MRData.RaceTable.Races) > 0 {
@@ -70,14 +70,30 @@ func (erg *ErgastAPI) GetRaceResults(userDate time.Time, raceId string) ([]model
 	return nil, temperrors.ErrEmptyList
 }
 
-func (erg *ErgastAPI) GetGPInfo(userDate time.Time, raceId string) []models.Race {
-	resp, _ := getRequest(fmt.Sprintf("%s/%d/%s.json", erg.url, userDate.Year(), raceId))
-	return resp.MRData.RaceTable.Races
+func (erg *ErgastAPI) GetGPInfo(userDate time.Time, raceId string) ([]models.Race, error) {
+	resp, err := getRequest(fmt.Sprintf("%s/%d/%s.json", erg.url, userDate.Year(), raceId))
+	if err != nil {
+		return nil, fmt.Errorf("in getGPInfo %w", err)
+	}
+
+	if len(resp.MRData.RaceTable.Races) > 0 {
+		return resp.MRData.RaceTable.Races, nil
+	} else {
+		return nil, temperrors.ErrEmptyList
+	}
 }
 
-func (erg *ErgastAPI) GetQualifyingResults(userDate time.Time, raceID string) []models.Race {
-	resp, _ := getRequest(fmt.Sprintf("%s/%d/%s/qualifying.json", erg.url, userDate.Year(), raceID))
-	return resp.MRData.RaceTable.Races
+func (erg *ErgastAPI) GetQualifyingResults(userDate time.Time, raceID string) ([]models.Race, error) {
+	resp, err := getRequest(fmt.Sprintf("%s/%d/%s/qualifying.json", erg.url, userDate.Year(), raceID))
+	if err != nil {
+		return nil, fmt.Errorf("in getQualifyingResults %w", err)
+	}
+
+	if len(resp.MRData.RaceTable.Races) > 0 {
+		return resp.MRData.RaceTable.Races, nil
+	} else {
+		return nil, temperrors.ErrEmptyList
+	}
 }
 
 func (erg *ErgastAPI) GetSprintResults(userDate time.Time, raceId string) []models.Race {

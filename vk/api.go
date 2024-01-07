@@ -28,7 +28,7 @@ type messageService interface {
 	GetGPInfoCarousel(userDate time.Time, raceId string) (string, error)
 	GetGPKeyboard() string
 	GetCountDaysAfterRaceMessage(userDate time.Time, raceId string) (string, error)
-	GetQualifyingResultsMessage(userDate time.Time, raceId string) string
+	GetQualifyingResultsMessage(userDate time.Time, raceId string) (string, error)
 	GetSprintResultsMessage(userDate time.Time, raceId string) string
 }
 
@@ -108,7 +108,11 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 				log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
 			case commandQualRes:
-				messageToUser := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
+				messageToUser, err := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
+				if err != nil {
+					log.Error("Error with qualifying result", err)
+				}
+
 				resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 				if err != nil {
 					log.Error("Error with sending message-answer to command `commandQualRes` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
@@ -276,7 +280,11 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
 				case commandLstQual:
-					messageToUser := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
+					messageToUser, err := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
+					if err != nil {
+						log.Error("Error with last qualifying result", err)
+					}
+
 					resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
 					if err != nil {
 						log.Error("Error with sending message-answer to command `commandLstQual` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))

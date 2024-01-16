@@ -30,6 +30,7 @@ type messageService interface {
 	GetCountDaysAfterRaceMessage(userDate time.Time, raceId string) (string, error)
 	GetQualifyingResultsMessage(userDate time.Time, raceId string) (string, error)
 	GetSprintResultsMessage(userDate time.Time, raceId string) string
+	GetCountOfRaces(userDate time.Time) (int, error)
 }
 
 type eventService interface {
@@ -249,8 +250,12 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 
 				case commandGPs:
 					//kb := vk.messageService.GetGPKeyboard()
+					count, err := vk.messageService.GetCountOfRaces(userDate)
+					if err != nil {
+						log.Error("Error taking count of races", slog.Any("error", err))
+					}
 
-					kb, err := makeKeyboard(2, 4, 1, 24, false)
+					kb, err := makeKeyboard(2, 4, 1, count, false)
 					if err != nil {
 						log.Error("Error creating keyboard", slog.Any("error", err))
 					}
@@ -267,7 +272,7 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					}
 					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
-				case commandDaysAfterRace:
+				case commandDaysAfterRace, commandDaysAfterRaceСut:
 					messageToUser, err := vk.messageService.GetCountDaysAfterRaceMessage(userDate, raceId)
 					if err != nil {
 						log.Error("Error with sending message-answer to command `commandDaysAfterRace` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))

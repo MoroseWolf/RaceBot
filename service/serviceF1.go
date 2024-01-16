@@ -142,12 +142,6 @@ func (s *ServiceF1) GetRaceResultsMessage(userDate time.Time, raceId string) (st
 	} else {
 		return fmt.Sprintf("Результаты гонки %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
 	}
-
-	/*if len(results) > 0 {
-		return fmt.Sprintf("Результаты гонки %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
-	} else {
-		return "", nil
-	}*/
 }
 
 func (s *ServiceF1) GetGPInfoCarousel(userDate time.Time, raceId string) (string, error) {
@@ -259,6 +253,15 @@ func (s *ServiceF1) GetSprintResultsMessage(userDate time.Time, raceId string) s
 	} else {
 		return "Информации о результатах данной спринт-гонки нет. Возможно она появится в будущем :)"
 	}
+}
+
+func (s *ServiceF1) GetCountOfRaces(userDate time.Time) (int, error) {
+	calendar, err := s.storage.GetCalendar(userDate.Year())
+	if err != nil {
+		slog.Error("%w", err)
+		return 0, err
+	}
+	return len(calendar), nil
 }
 
 // ----------------------------------

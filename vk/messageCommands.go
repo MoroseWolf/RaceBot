@@ -21,6 +21,7 @@ const (
 	commandRaceRes          command = `raceRes_\d{1,2}`
 	commandQualRes          command = `qualRes_\d{1,2}`
 	commandSprRes           command = `sprRes_\d{1,2}`
+	commandClsKb            command = `выклкб`
 	commandUnknown          command = ``
 )
 
@@ -46,6 +47,7 @@ func getCommand(message string) command {
 		commandRaceRes,
 		commandQualRes,
 		commandSprRes,
+		commandClsKb,
 	}
 
 	for _, command := range commands {

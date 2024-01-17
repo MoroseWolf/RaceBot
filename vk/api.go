@@ -296,6 +296,29 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					}
 					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
+				case commandClsKb:
+					kb, err := makeKeyboard(0, 0, 0, 0, false)
+					if err != nil {
+						log.Error("Error creating keyboard", slog.Any("error", err))
+					}
+
+					jsKb, err := json.Marshal(kb)
+					if err != nil {
+						log.Error("Error marshal keyboard", slog.Any("error", err))
+					}
+
+					strKb := string(jsKb)
+
+					msgResp, err := sendMessageToUser("Закрываю", obj.Message.PeerID, vk.lp.VK, &strKb, nil, nil)
+					if err != nil {
+						log.Error("Error with sending message-answer to command `commandGpList1` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					}
+					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", msgResp[0].PeerID), slog.Int("message_id", msgResp[0].MessageID), slog.Int("cm_id", msgResp[0].ConversationMessageID)))
+
+					err = deleteMessages(vk.lp.VK, []int{msgResp[0].ConversationMessageID}, obj.Message.PeerID, true)
+					if err != nil {
+						log.Error("Error with deleting", slog.Any("Error", err))
+					}
 				default:
 					log.Info("Команда в сообщении не распознана", slog.String("text", obj.Message.Text))
 				}
@@ -467,6 +490,10 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 	btnsRow := make([]Button, 0, row)
 	buttons := [][]Button{}
 	sizeKb := row * col
+
+	if countEl == 0 {
+		return Kb{Inline: inline, Buttons: buttons}, nil
+	}
 
 	visKb := countEl - sizeKb*(numPage-1)
 	if visKb > sizeKb {

@@ -17,6 +17,7 @@ import (
 const (
 	f1memesId       = 2000000003
 	f1memesStreamer = 152819213
+	botAdminId      = 147506714
 )
 
 type messageService interface {
@@ -531,7 +532,7 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 }
 
 func checkStream(id int, command command) bool {
-	if (id == f1memesStreamer) && (command == commandStream) {
+	if ((id == f1memesStreamer) || (id == botAdminId)) && (command == commandStream) {
 		return true
 	}
 	return false

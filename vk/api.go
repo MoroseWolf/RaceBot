@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	f1memesId       = 2000000003
+	f1memesChatId   = 2000000003
+	testChatId      = 2000000005
 	f1memesStreamer = 152819213
 	botAdminId      = 147506714
 )
@@ -39,25 +40,21 @@ type eventService interface {
 }
 
 type VkAPI struct {
+	usrVk          *api.VK
 	lp             *longpoll.LongPoll
 	messageService messageService
 	eventService   eventService
 }
 
-func NewVKAPI(token string, messageService messageService, eventService eventService) (*VkAPI, error) {
-	vk := api.NewVK(token)
+func NewVKAPI(groupToken, userToken string, messageService messageService, eventService eventService) (*VkAPI, error) {
+	vk := api.NewVK(groupToken)
 
-	group, err := vk.GroupsGetByID(api.Params{})
-	if err != nil {
-		return nil, fmt.Errorf("error groups get by id: %w", err)
-	}
-
-	lp, err := longpoll.NewLongPoll(vk, group[0].ID)
+	lp, err := longpoll.NewLongPollCommunity(vk)
 	if err != nil {
 		return nil, fmt.Errorf("error creating new log pool: %w", err)
 	}
 
-	return &VkAPI{lp: lp, messageService: messageService, eventService: eventService}, nil
+	return &VkAPI{usrVk: api.NewVK(userToken), lp: lp, messageService: messageService, eventService: eventService}, nil
 }
 
 func (vk *VkAPI) Run(log *slog.Logger) {
@@ -135,14 +132,22 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 			raceId = "last"
 
 			if checkStream(obj.Message.PeerID, command) {
-				streamLink := extractStreamLink(messageText)
+
+				//streamLink := extractStreamLink(messageText)
+				streamLink, err := getLastVideo(vk.usrVk)
+				if err != nil {
+					log.Error(err.Error())
+				}
+
 				messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в [vk.com/f1memestv|VK]."
-				resp, err := sendMessageToUser(messageToUser, f1memesId, vk.lp.VK, nil, nil, &streamLink)
+
+				resp, err := sendMessageToUser(messageToUser, testChatId, vk.lp.VK, nil, nil, &streamLink)
 				if err != nil {
 					log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
 				}
 				log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
+				log.Info("Video link", streamLink)
 			} else {
 
 				switch command {
@@ -538,10 +543,20 @@ func checkStream(id int, command command) bool {
 	return false
 }
 
-func extractStreamLink(messageText string) string {
-	msgParts := strings.Split(messageText, " ")
-	link := strings.TrimPrefix(msgParts[1], "https://vk.com/")
-	return link
+func getLastVideo(vk *api.VK) (string, error) {
+
+	f1memesId := -211183989
+	prms := params.NewVideoGetBuilder()
+	prms.OwnerID(f1memesId)
+	prms.Count(2)
+
+	resp, err := vk.VideoGet(prms.Params)
+	if err != nil {
+		return "", fmt.Errorf("error in video.get: %w", err)
+	}
+
+	return fmt.Sprintf("video%d_%d", resp.Items[0].OwnerID, resp.Items[0].ID), nil
+
 }
 
 // ----------------------------------
@@ -555,5 +570,12 @@ func deleteMention(messageText string) string {
 	messageText = strings.TrimPrefix(messageText, "[club219009582|@club219009582]")
 	messageText = strings.TrimPrefix(messageText, "[club219009582|Race Bot]")
 	return messageText
+}
+*/
+/*
+func extractStreamLink(messageText string) string {
+	msgParts := strings.Split(messageText, " ")
+	link := strings.TrimPrefix(msgParts[1], "https://vk.com/")
+	return link
 }
 */

@@ -133,7 +133,6 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 
 			if checkStream(obj.Message.PeerID, command) {
 
-				//streamLink := extractStreamLink(messageText)
 				streamLink, err := getLastVideo(vk.usrVk)
 				if err != nil {
 					log.Error(err.Error())
@@ -141,13 +140,13 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 
 				messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в [vk.com/f1memestv|VK]."
 
-				resp, err := sendMessageToUser(messageToUser, testChatId, vk.lp.VK, nil, nil, &streamLink)
+				resp, err := sendMessageToUser(messageToUser, f1memesChatId, vk.lp.VK, nil, nil, &streamLink)
 				if err != nil {
 					log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
 				}
 				log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
-				log.Info("Video link", streamLink)
+				log.Info("Video link", slog.String("video_id", streamLink))
 			} else {
 
 				switch command {

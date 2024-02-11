@@ -25,6 +25,17 @@ func main() {
 	conf := config.New()
 	log := setupLogger()
 
+	vkAPI, tgAPI := setupConnection(conf, log)
+
+	go vkAPI.Run(log)
+	tgAPI.Run(log)
+}
+
+func setupLogger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(os.Stdout, nil))
+}
+
+func setupConnection(conf *config.Config, log *slog.Logger) (*vk_api.VkAPI, *tg_api.TgAPI) {
 	ergastAPI := ergast.NewErgastAPI()
 	service := service.NewServiceF1(ergastAPI)
 
@@ -40,10 +51,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	go vkAPI.Run(log)
-	tgAPI.Run(log)
-}
-
-func setupLogger() *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	return vkAPI, tgAPI
 }

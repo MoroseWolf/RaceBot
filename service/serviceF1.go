@@ -9,7 +9,6 @@ import (
 	"racebot-vk/models"
 	"racebot-vk/temperrors"
 	vk_api "racebot-vk/vk"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -59,7 +58,14 @@ func (s *ServiceF1) GetDriverStandingsMessage(userDate time.Time) (string, error
 			return "", err
 		}
 	}
-	return fmt.Sprintf("Личный зачёт F1, сезон %d: \n%s", userDate.Year(), driversToString(driversTable)), nil
+
+	race, err := s.storage.GetGPInfo(userDate, "last")
+	if err != nil {
+		slog.Error("%w", err)
+		return "", err
+	}
+
+	return fmt.Sprintf("Личный зачёт F1\nПосле этапа №%s %s сезон %s: \n%s", race[0].Round, race[0].RaceName, race[0].Season, driversToString(driversTable)), nil
 }
 
 func (s *ServiceF1) GetCalendarMessage(year int) (string, error) {
@@ -111,36 +117,33 @@ func (s *ServiceF1) GetConstructorStandingsMessage(userDate time.Time) (string, 
 			slog.Error("%w", err)
 			return "", err
 		}
+
 	}
-	return fmt.Sprintf("Кубок конструкторов F1, сезон %d:\n%s", userDate.Year(), constructorsToString(constStr)), nil
+
+	race, err := s.storage.GetGPInfo(userDate, "last")
+	if err != nil {
+		slog.Error("%w", err)
+		return "", err
+	}
+
+	return fmt.Sprintf("Кубок конструкторов F1\nПосле этапа №%s %s, сезон %s:\n%s", race[0].Round, race[0].RaceName, race[0].Season, constructorsToString(constStr)), nil
 }
 
 func (s *ServiceF1) GetRaceResultsMessage(userDate time.Time, raceId string) (string, error) {
 	results, err := s.storage.GetRaceResults(userDate, raceId)
 	if err != nil {
 
-		if errors.Is(err, temperrors.ErrEmptyList) {
-
-			if raceId != "last" {
-				tmpId, tmpErr := strconv.Atoi(raceId)
-				if tmpErr != nil {
-					return "", err
-				}
-
-				tmpId -= 1
-				str, tmpErr := s.GetRaceResultsMessage(userDate, strconv.Itoa(tmpId))
-				return str, tmpErr
-			}
+		if errors.Is(err, temperrors.ErrEmptyList) && raceId == "last" {
 			results, _ = s.storage.GetRaceResults(userDate.AddDate(-1, 0, 0), raceId)
-
 		} else {
 			return "Информации о результатах данной гонки нет. Возможно она появится в будущем :)", err
 		}
+
 	}
 	if raceId == "last" {
-		return fmt.Sprintf("Последняя гонка F1 %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
+		return fmt.Sprintf("Последняя гонка F1 %s %s:\n%s", results[0].RaceName, results[0].Season, raceResultsToString(results[0])), nil
 	} else {
-		return fmt.Sprintf("Результаты гонки %s:\n%s", results[0].RaceName, raceResultsToString(results[0])), nil
+		return fmt.Sprintf("Результаты гонки F1 %s %s:\n%s", results[0].RaceName, results[0].Season, raceResultsToString(results[0])), nil
 	}
 }
 
@@ -229,6 +232,11 @@ func (s *ServiceF1) GetQualifyingResultsMessage(userDate time.Time, raceId strin
 	if err != nil {
 
 		if errors.Is(err, temperrors.ErrEmptyList) {
+
+			if raceId != "last" {
+				return "Информации о результатах данной квалификации нет. Возможно она появится в будущем :)", nil
+			}
+
 			qualRes, _ = s.storage.GetQualifyingResults(userDate.AddDate(-1, 0, 0), raceId)
 		} else {
 			return "", err
@@ -236,9 +244,9 @@ func (s *ServiceF1) GetQualifyingResultsMessage(userDate time.Time, raceId strin
 	}
 
 	if raceId == "last" {
-		return fmt.Sprintf("Последняя квалификация %s:\n%s", qualRes[0].RaceName, qualifyingResultsToString(qualRes[0])), nil
+		return fmt.Sprintf("Последняя квалификация %s %s:\n%s", qualRes[0].RaceName, qualRes[0].Season, qualifyingResultsToString(qualRes[0])), nil
 	} else {
-		return fmt.Sprintf("Результаты квалификации %s:\n%s", qualRes[0].RaceName, qualifyingResultsToString(qualRes[0])), nil
+		return fmt.Sprintf("Результаты квалификации %s %s:\n%s", qualRes[0].RaceName, qualRes[0].Season, qualifyingResultsToString(qualRes[0])), nil
 	}
 }
 
@@ -249,7 +257,7 @@ func (s *ServiceF1) GetSprintResultsMessage(userDate time.Time, raceId string) s
 	}
 	sprRace := s.storage.GetSprintResults(userDate, raceId)
 	if len(sprRace) > 0 {
-		return fmt.Sprintf("Результаты спринт-гонки %s:\n%s", sprRace[0].RaceName, sprintResultsToString(sprRace[0]))
+		return fmt.Sprintf("Результаты спринт-гонки %s %s:\n%s", sprRace[0].RaceName, sprRace[0].Season, sprintResultsToString(sprRace[0]))
 	} else {
 		return "Информации о результатах данной спринт-гонки нет. Возможно она появится в будущем :)"
 	}

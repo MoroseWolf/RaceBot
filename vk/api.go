@@ -12,6 +12,7 @@ import (
 	"github.com/SevereCloud/vksdk/v2/api/params"
 	"github.com/SevereCloud/vksdk/v2/events"
 	"github.com/SevereCloud/vksdk/v2/longpoll-bot"
+	"github.com/SevereCloud/vksdk/v2/object"
 )
 
 const (
@@ -19,7 +20,10 @@ const (
 	testChatId      = 2000000005
 	f1memesStreamer = 152819213
 	botAdminId      = 147506714
+	f1memesId       = -211183989
 )
+
+var lastStreamId = 0
 
 type messageService interface {
 	GetDriverStandingsMessage(userDate time.Time) (string, error)
@@ -68,6 +72,7 @@ func (vk *VkAPI) Run(log *slog.Logger) {
 }
 
 func (vk *VkAPI) messageHandler(log *slog.Logger) {
+	quit := make(chan bool)
 	vk.lp.MessageNew(func(_ context.Context, obj events.MessageNewObject) {
 		log.Info(
 			"MESSAGE info",
@@ -131,26 +136,42 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 			command = getCommand(messageText)
 			raceId = "last"
 
-			if checkStream(obj.Message.PeerID, command) {
+			if checkStreamCommand(obj.Message.PeerID, command) {
 
-				streamLink, err := getLastVideo(vk.usrVk)
+				ticker := time.NewTicker(15 * time.Minute)
+				lastVideo, err := getLastVideos(vk.usrVk, 1)
 				if err != nil {
 					log.Error(err.Error())
 				}
+				lastStreamId = lastVideo[0].ID
+				switch command {
 
-				messageToUser = "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в [vk.com/f1memestv|VK]."
+				case commandStartCheckStream:
 
-				resp, err := sendMessageToUser(messageToUser, f1memesChatId, vk.lp.VK, nil, nil, &streamLink)
-				if err != nil {
-					log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					messageToUser = "Команда принята!"
+					resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					}
+					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
+					log.Info("Start video check")
+
+					go checkLastStream(quit, ticker, log, vk, obj)
+
+				case commandEndCheckStream:
+					ticker.Stop()
+					quit <- true
+					messageToUser = "Команда принята!"
+					resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
+					if err != nil {
+						log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					}
+					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 				}
-				log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 
-				log.Info("Video link", slog.String("video_id", streamLink))
 			} else {
 
 				switch command {
-
 				case commandHello:
 					messageToUser =
 						`Привет! Я бот, который делится информацией про F1 :)
@@ -324,6 +345,15 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					if err != nil {
 						log.Error("Error with deleting", slog.Any("Error", err))
 					}
+
+				case commandLvrsList:
+					photo := "photo-219009582_457239026"
+					msgResp, err := sendMessageToUser("Ливреи машин 2024 года", obj.Message.PeerID, vk.lp.VK, nil, nil, &photo)
+					if err != nil {
+						log.Error("Error with sending message-answer to command `commandLvrsList` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					}
+					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", msgResp[0].PeerID), slog.Int("message_id", msgResp[0].MessageID), slog.Int("cm_id", msgResp[0].ConversationMessageID)))
+
 				default:
 					log.Info("Команда в сообщении не распознана", slog.String("text", obj.Message.Text))
 				}
@@ -535,27 +565,65 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 	return Kb{Inline: inline, Buttons: buttons}, nil
 }
 
-func checkStream(id int, command command) bool {
-	if ((id == f1memesStreamer) || (id == botAdminId)) && (command == commandStream) {
+func checkStreamCommand(id int, command command) bool {
+	if ((id == f1memesStreamer) || (id == botAdminId)) && ((command == commandStartCheckStream) || (command == commandEndCheckStream)) {
 		return true
 	}
 	return false
 }
 
-func getLastVideo(vk *api.VK) (string, error) {
+func getLastVideos(vk *api.VK, count int) ([]object.VideoVideo, error) {
 
-	f1memesId := -211183989
 	prms := params.NewVideoGetBuilder()
 	prms.OwnerID(f1memesId)
-	prms.Count(2)
+	prms.Count(count)
 
 	resp, err := vk.VideoGet(prms.Params)
 	if err != nil {
-		return "", fmt.Errorf("error in video.get: %w", err)
+		return nil, fmt.Errorf("error in video.get: %w", err)
 	}
 
-	return fmt.Sprintf("video%d_%d", resp.Items[0].OwnerID, resp.Items[0].ID), nil
+	return resp.Items, nil
 
+}
+
+func checkLastStream(quit <-chan bool, ticker *time.Ticker, log *slog.Logger, vk *VkAPI, obj events.MessageNewObject) {
+	for {
+		select {
+		case <-quit:
+			ticker.Stop()
+			log.Info("End video check")
+			return
+		case t := <-ticker.C:
+			log.Info("Video check", slog.String("time", t.UTC().String()))
+			lastVideo, err := getLastVideos(vk.usrVk, 2)
+			if err != nil {
+				log.Error(err.Error())
+			}
+			log.Info("Video id", slog.Int("ID", lastVideo[0].ID))
+
+			if lastVideo[0].ID != lastStreamId {
+				if lastVideo[0].Live == true {
+					lastStreamId = lastVideo[0].ID
+					streamLink := fmt.Sprintf("video%d_%d", f1memesId, lastStreamId)
+					if err != nil {
+						log.Error(err.Error())
+					}
+
+					messageToUser := "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в VK."
+					resp, err := sendMessageToUser(messageToUser, testChatId, vk.lp.VK, nil, nil, &streamLink)
+					if err != nil {
+						log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+					}
+
+					log.Info("Video link", slog.String("video_id", streamLink))
+					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
+
+				}
+
+			}
+		}
+	}
 }
 
 // ----------------------------------
@@ -578,3 +646,7 @@ func extractStreamLink(messageText string) string {
 	return link
 }
 */
+
+/*
+
+ */

@@ -15,13 +15,15 @@ const (
 	commandHello            command = `начать`
 	commandDaysAfterRace    command = `дней без формулы|F1`
 	commandDaysAfterRaceСut command = `дбф`
-	commandStream           command = `strstart`
+	commandStartCheckStream command = `strstart`
+	commandEndCheckStream   command = `strend`
 	commandLstGP            command = `ласт гп`
 	commandGPs              command = `этапы`
 	commandRaceRes          command = `raceRes_\d{1,2}`
 	commandQualRes          command = `qualRes_\d{1,2}`
 	commandSprRes           command = `sprRes_\d{1,2}`
 	commandClsKb            command = `выклкб`
+	commandLvrsList         command = `ливреи`
 	commandUnknown          command = ``
 )
 
@@ -41,13 +43,15 @@ func getCommand(message string) command {
 		commandHello,
 		commandDaysAfterRace,
 		commandDaysAfterRaceСut,
-		commandStream,
+		commandStartCheckStream,
+		commandEndCheckStream,
 		commandLstGP,
 		commandGPs,
 		commandRaceRes,
 		commandQualRes,
 		commandSprRes,
 		commandClsKb,
+		commandLvrsList,
 	}
 
 	for _, command := range commands {

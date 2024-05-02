@@ -12,7 +12,6 @@ import (
 	"github.com/SevereCloud/vksdk/v2/api/params"
 	"github.com/SevereCloud/vksdk/v2/events"
 	"github.com/SevereCloud/vksdk/v2/longpoll-bot"
-	"github.com/SevereCloud/vksdk/v2/object"
 )
 
 const (
@@ -21,6 +20,7 @@ const (
 	f1memesStreamer = 152819213
 	botAdminId      = 147506714
 	f1memesId       = -211183989
+	testGroupId     = -210295709
 )
 
 var lastStreamId = 0
@@ -73,6 +73,7 @@ func (vk *VkAPI) Run(log *slog.Logger) {
 
 func (vk *VkAPI) messageHandler(log *slog.Logger) {
 	quit := make(chan bool)
+	var myUsrVk MyVk = MyVk{vk.usrVk}
 	vk.lp.MessageNew(func(_ context.Context, obj events.MessageNewObject) {
 		log.Info(
 			"MESSAGE info",
@@ -138,8 +139,8 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 
 			if checkStreamCommand(obj.Message.PeerID, command) {
 
-				ticker := time.NewTicker(15 * time.Minute)
-				lastVideo, err := getLastVideos(vk.usrVk, 1)
+				ticker := time.NewTicker(2 * time.Minute)
+				lastVideo, err := getLastVideos(myUsrVk, 1)
 				if err != nil {
 					log.Error(err.Error())
 				}
@@ -156,7 +157,7 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
 					log.Info("Start video check")
 
-					go checkLastStream(quit, ticker, log, vk, obj)
+					go checkLastStream(quit, ticker, log, vk, &myUsrVk, obj)
 
 				case commandEndCheckStream:
 					ticker.Stop()
@@ -572,7 +573,7 @@ func checkStreamCommand(id int, command command) bool {
 	return false
 }
 
-func getLastVideos(vk *api.VK, count int) ([]object.VideoVideo, error) {
+func getLastVideos(vk MyVk, count int) ([]MyVideo, error) {
 
 	prms := params.NewVideoGetBuilder()
 	prms.OwnerID(f1memesId)
@@ -587,7 +588,7 @@ func getLastVideos(vk *api.VK, count int) ([]object.VideoVideo, error) {
 
 }
 
-func checkLastStream(quit <-chan bool, ticker *time.Ticker, log *slog.Logger, vk *VkAPI, obj events.MessageNewObject) {
+func checkLastStream(quit <-chan bool, ticker *time.Ticker, log *slog.Logger, vk *VkAPI, myUsrVk *MyVk, obj events.MessageNewObject) {
 	for {
 		select {
 		case <-quit:
@@ -596,14 +597,14 @@ func checkLastStream(quit <-chan bool, ticker *time.Ticker, log *slog.Logger, vk
 			return
 		case t := <-ticker.C:
 			log.Info("Video check", slog.String("time", t.UTC().String()))
-			lastVideo, err := getLastVideos(vk.usrVk, 2)
+			lastVideo, err := getLastVideos(*myUsrVk, 2)
 			if err != nil {
 				log.Error(err.Error())
 			}
 			log.Info("Video id", slog.Int("ID", lastVideo[0].ID))
 
 			if lastVideo[0].ID != lastStreamId {
-				if lastVideo[0].Live == true {
+				if (lastVideo[0].Live == true) && (lastVideo[0].LiveStatus == "started") {
 					lastStreamId = lastVideo[0].ID
 					streamLink := fmt.Sprintf("video%d_%d", f1memesId, lastStreamId)
 					if err != nil {

@@ -139,7 +139,7 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 
 			if checkStreamCommand(obj.Message.PeerID, command) {
 
-				ticker := time.NewTicker(2 * time.Minute)
+				ticker := time.NewTicker(5 * time.Minute)
 				lastVideo, err := getLastVideos(myUsrVk, 1)
 				if err != nil {
 					log.Error(err.Error())

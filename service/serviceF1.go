@@ -223,6 +223,12 @@ func (s *ServiceF1) GetCountDaysAfterRaceMessage(userDate time.Time, raceId stri
 	lastRaceDate := parseStringToTime(lastRace.Date, lastRace.Time)
 	difference := userDate.Sub(lastRaceDate)
 
+	if difference < 0 {
+		races, _ = s.storage.GetGPInfo(userDate.AddDate(-1, 0, 0), raceId)
+		lastRaceDate := parseStringToTime(races[0].Date, races[0].Time)
+		difference = userDate.Sub(lastRaceDate)
+	}
+
 	return fmt.Sprintf("Дней без F1 - %d :(\n", int64(difference.Hours()/24)), nil
 }
 

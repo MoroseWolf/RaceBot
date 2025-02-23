@@ -611,8 +611,8 @@ func checkLastStream(quit <-chan bool, ticker *time.Ticker, log *slog.Logger, vk
 						log.Error(err.Error())
 					}
 
-					messageToUser := "Трансляция 'F1 Memes TV' началась! Смотри в Telegram t.me/f1memestv и в VK."
-					resp, err := sendMessageToUser(messageToUser, testChatId, vk.lp.VK, nil, nil, &streamLink)
+					messageToUser := "Трансляция 'F1 Memes TV' началась! Смотри в Telegram и в VK."
+					resp, err := sendMessageToUser(messageToUser, f1memesChatId, vk.lp.VK, nil, nil, &streamLink)
 					if err != nil {
 						log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
 					}

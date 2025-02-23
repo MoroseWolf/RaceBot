@@ -16,7 +16,7 @@ type ErgastAPI struct {
 }
 
 func NewErgastAPI() *ErgastAPI {
-	return &ErgastAPI{url: "http://ergast.com/api/f1"}
+	return &ErgastAPI{url: "http://api.jolpi.ca/ergast/f1"}
 }
 
 func (erg *ErgastAPI) GetDriverStandings(userDate time.Time) ([]models.DriverStandingsItem, error) {

@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"os"
 	"racebot-vk/config"
-	"racebot-vk/ergast"
 	"racebot-vk/service"
+	"racebot-vk/storage/ergast"
 	tg_api "racebot-vk/telegram"
 	vk_api "racebot-vk/vk"
 
@@ -39,7 +39,7 @@ func setupConnection(conf *config.Config, log *slog.Logger) (*vk_api.VkAPI, *tg_
 	ergastAPI := ergast.NewErgastAPI()
 	service := service.NewServiceF1(ergastAPI)
 
-	vkAPI, err := vk_api.NewVKAPI(conf.VkGroupToken, conf.VkUserToken, service, service)
+	vkAPI, err := vk_api.NewVKAPI(conf.VkGroupToken, conf.VkUserToken, service, service, nil)
 	if err != nil {
 		log.Error("Error vkApi object")
 		os.Exit(1)

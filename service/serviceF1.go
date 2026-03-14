@@ -30,6 +30,7 @@ var months = map[string]string{
 }
 
 type f1Storage interface {
+	GetDriversList(userDate time.Time) ([]models.Driver, error)
 	GetDriverStandings(userDate time.Time) ([]models.DriverStandingsItem, error)
 	GetCalendar(year int) ([]models.Race, error)
 	GetConstructorStandings(userDate time.Time) ([]models.ConstructorStandingsItem, error)
@@ -47,10 +48,22 @@ func NewServiceF1(storage f1Storage) *ServiceF1 {
 	return &ServiceF1{storage}
 }
 
+func (s *ServiceF1) GetDriversListMessage(userDate time.Time) (string, error) {
+	drivers, err := s.storage.GetDriversList(userDate)
+	if err != nil {
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			return "Список гонщиков еще не сформирован.", nil
+		} else {
+			slog.Error("%w", err)
+			return "", err
+		}
+	}
+	return fmt.Sprintf("Гонщики и их номера: \n%s", driversToString(drivers)), nil
+}
+
 func (s *ServiceF1) GetDriverStandingsMessage(userDate time.Time) (string, error) {
 	driversTable, err := s.storage.GetDriverStandings(userDate)
 	if err != nil {
-
 		if errors.Is(err, temperrors.ErrEmptyList) {
 			return "Личный зачёт еще не сформирован.", nil
 		} else {
@@ -65,7 +78,7 @@ func (s *ServiceF1) GetDriverStandingsMessage(userDate time.Time) (string, error
 		return "", err
 	}
 
-	return fmt.Sprintf("Личный зачёт F1\nПосле этапа №%s %s сезон %s: \n%s", race[0].Round, race[0].RaceName, race[0].Season, driversToString(driversTable)), nil
+	return fmt.Sprintf("Личный зачёт F1\nПосле этапа №%s %s сезон %s: \n%s", race[0].Round, race[0].RaceName, race[0].Season, driversStandToString(driversTable)), nil
 }
 
 func (s *ServiceF1) GetCalendarMessage(year int) (string, error) {
@@ -83,7 +96,7 @@ func (s *ServiceF1) GetCalendarMessage(year int) (string, error) {
 }
 
 func (s *ServiceF1) GetNextRaceMessage(userDate time.Time, userTimestamp int) (string, error) {
-	year := userDate.Year()
+	/*year := userDate.Year()
 	calendar, err := s.storage.GetCalendar(year)
 	if err != nil {
 
@@ -102,8 +115,37 @@ func (s *ServiceF1) GetNextRaceMessage(userDate time.Time, userTimestamp int) (s
 	if isAfter {
 		return "Сезон закончился!", nil
 	} else {
-		nextRace := findNextRace(int64(userTimestamp), calendar)
+		nextRace := FindNextRace(int64(userTimestamp), calendar)
 		return fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace))), nil
+	}*/
+	nextRace, err := s.GetNextRace(userDate, userTimestamp)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Cледующий гран-при :\n%s", raceFullInfoToString(formatDateTime(nextRace))), nil
+}
+
+func (s *ServiceF1) GetNextRace(userDate time.Time, userTimestamp int) (models.Race, error) {
+	year := userDate.Year()
+	calendar, err := s.storage.GetCalendar(year)
+	if err != nil {
+
+		if errors.Is(err, temperrors.ErrEmptyList) {
+			return models.Race{}, errors.New("Календарь еще не сформирован.")
+		} else {
+			slog.Error("%w", err)
+			return models.Race{}, err
+		}
+	}
+
+	isAfter, err := checkCurrToLastTime(int64(userTimestamp), calendar[len(calendar)-1])
+	if err != nil {
+		return models.Race{}, err
+	}
+	if isAfter {
+		return models.Race{}, nil
+	} else {
+		return FindNextRace(int64(userTimestamp), calendar), nil
 	}
 }
 
@@ -284,7 +326,23 @@ func (s *ServiceF1) GetCountOfRaces(userDate time.Time) (int, error) {
 //
 // ----------------------------------
 
-func driversToString(drivers []models.DriverStandingsItem) string {
+func driversStandToString(drivers []models.DriverStandingsItem) string {
+
+	var countDrivers int = len(drivers)
+	driversList := make([]string, countDrivers)
+
+	for _, driver := range drivers {
+		driversList = append(driversList, driverStandToString(driver))
+	}
+
+	return strings.Join(driversList, "")
+}
+
+func driverStandToString(driver models.DriverStandingsItem) string {
+	return fmt.Sprintf("%2s | %-3s - %-3s \n", driver.PositionText, driver.Driver.Code, driver.Points)
+}
+
+func driversToString(drivers []models.Driver) string {
 
 	var countDrivers int = len(drivers)
 	driversList := make([]string, countDrivers)
@@ -296,8 +354,8 @@ func driversToString(drivers []models.DriverStandingsItem) string {
 	return strings.Join(driversList, "")
 }
 
-func driverToString(driver models.DriverStandingsItem) string {
-	return fmt.Sprintf("%2s | %-3s - %-3s \n", driver.PositionText, driver.Driver.Code, driver.Points)
+func driverToString(driver models.Driver) string {
+	return fmt.Sprintf("%s %s - №%s\n", driver.GivenName, driver.FamilyName, driver.PermanentNumber)
 }
 
 func constructorsToString(constructors []models.ConstructorStandingsItem) string {
@@ -428,7 +486,7 @@ func ruMonth(date string) string {
 	return strings.Join([]string{partsDate[2], partsDate[1], partsDate[0]}, " ")
 }
 
-func findNextRace(messageDate int64, races []models.Race) models.Race {
+func FindNextRace(messageDate int64, races []models.Race) models.Race {
 
 	userDate := time.Unix(messageDate, 0)
 	var numRace int

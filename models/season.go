@@ -94,10 +94,15 @@ type RaceTable struct {
 	Races  []Race
 }
 
+type DriverTable struct {
+	Drivers []Driver
+}
+
 type MRData struct {
 	Series         string
 	RaceTable      RaceTable
 	StandingsTable StandingsTable
+	DriverTable    DriverTable
 }
 
 type Object struct {

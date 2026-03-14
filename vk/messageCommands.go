@@ -24,6 +24,8 @@ const (
 	commandSprRes           command = `sprRes_\d{1,2}`
 	commandClsKb            command = `выклкб`
 	commandLvrsList         command = `ливреи`
+	commandPredictionAdmin  command = `\Aпрогноз`
+	commandPredictionUser   command = `мойпрогноз`
 	commandUnknown          command = ``
 )
 
@@ -52,6 +54,8 @@ func getCommand(message string) command {
 		commandSprRes,
 		commandClsKb,
 		commandLvrsList,
+		commandPredictionAdmin,
+		commandPredictionUser,
 	}
 
 	for _, command := range commands {

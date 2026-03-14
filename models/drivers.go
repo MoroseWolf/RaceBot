@@ -2,7 +2,7 @@ package models
 
 type Driver struct {
 	DriverId        string
-	PermanentNumber int
+	PermanentNumber string
 	Code            string
 	Url             string
 	GivenName       string

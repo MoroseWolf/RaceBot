@@ -400,7 +400,7 @@ func raceResultsToString(race models.Race) string {
 
 	w := tabwriter.NewWriter(message, 2, 5, 1, ' ', tabwriter.AlignRight)
 	for _, position := range race.Results {
-		if position.Status == "Finished" {
+		if position.Status == "Finished" || position.Status == "Lapped" {
 			if position.Points != "0" {
 				fmt.Fprintf(w, "%s |\t%s |\t %s - %s\n", position.Position, position.Driver.Code, position.Time.Time, position.Points)
 			} else {

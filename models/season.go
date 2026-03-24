@@ -27,6 +27,11 @@ type Qualifying struct {
 	Time string
 }
 
+type SprintQualifying struct {
+	Date string
+	Time string
+}
+
 type Sprint struct {
 	Date string
 	Time string
@@ -83,6 +88,7 @@ type Race struct {
 	SecondPractice    SecondPractice
 	ThirdPractice     ThirdPractice
 	Qualifying        Qualifying
+	SprintQualifying  SprintQualifying
 	Sprint            Sprint
 	Results           []Result
 	QualifyingResults []Result

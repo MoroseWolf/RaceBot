@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SevereCloud/vksdk/v2/api"
-	"github.com/SevereCloud/vksdk/v2/api/params"
-	"github.com/SevereCloud/vksdk/v2/events"
-	"github.com/SevereCloud/vksdk/v2/longpoll-bot"
+	"github.com/SevereCloud/vksdk/v3/api"
+	"github.com/SevereCloud/vksdk/v3/api/params"
+	"github.com/SevereCloud/vksdk/v3/events"
+	"github.com/SevereCloud/vksdk/v3/longpoll-bot"
 )
 
 const (

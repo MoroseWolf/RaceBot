@@ -1,8 +1,8 @@
 package vk
 
 import (
-	"github.com/SevereCloud/vksdk/v2/api"
-	"github.com/SevereCloud/vksdk/v2/object"
+	"github.com/SevereCloud/vksdk/v3/api"
+	"github.com/SevereCloud/vksdk/v3/object"
 )
 
 type MyVk struct {

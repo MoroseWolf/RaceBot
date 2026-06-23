@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -24,6 +25,7 @@ type TgAPI struct {
 	updates        <-chan telego.Update
 	messageService messageService
 	handler        *th.BotHandler
+	cancel         context.CancelFunc
 }
 
 func NewTGAPI(token string, messageService messageService) (*TgAPI, error) {
@@ -32,12 +34,15 @@ func NewTGAPI(token string, messageService messageService) (*TgAPI, error) {
 		return nil, fmt.Errorf("error create tg bot from token: %w", err)
 	}
 
-	updates, err := bot.UpdatesViaLongPolling(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	updates, err := bot.UpdatesViaLongPolling(ctx, nil)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("error taking updates from longpool: %w", err)
 	}
 
-	return &TgAPI{bot: bot, updates: updates, messageService: messageService}, nil
+	return &TgAPI{bot: bot, updates: updates, messageService: messageService, cancel: cancel}, nil
 
 }
 
@@ -51,12 +56,12 @@ func (tg *TgAPI) Run(log *slog.Logger) {
 	tg.messageHandler(log)
 	tg.handler.Start()
 	defer tg.handler.Stop()
-	defer tg.bot.StopLongPolling()
+	defer tg.cancel()
 }
 
 func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
-	tg.handler.Handle(func(bot *telego.Bot, update telego.Update) {
+	tg.handler.Handle(func(ctx *th.Context, update telego.Update) error {
 
 		log.Info(
 			"MESSAGE info",
@@ -70,16 +75,18 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error with driver standings", err)
 		}
 
-		_, err = bot.SendMessage(tu.Message(
+		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
 			tu.ID(update.Message.Chat.ID),
 			messageToUser,
 		))
 		if err != nil {
 			log.Error("Error sending message with driver standings", err)
 		}
+
+		return nil
 	}, th.CommandEqual("driverstandings"))
 
-	tg.handler.Handle(func(bot *telego.Bot, update telego.Update) {
+	tg.handler.Handle(func(ctx *th.Context, update telego.Update) error {
 
 		log.Info(
 			"MESSAGE info",
@@ -93,16 +100,18 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error with calendar", err)
 		}
 
-		_, err = bot.SendMessage(tu.Message(
+		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
 			tu.ID(update.Message.Chat.ID),
 			messageToUser,
 		))
 		if err != nil {
 			log.Error("Error sending message with calendar", err)
 		}
+
+		return nil
 	}, th.CommandEqual("calendar"))
 
-	tg.handler.Handle(func(bot *telego.Bot, update telego.Update) {
+	tg.handler.Handle(func(ctx *th.Context, update telego.Update) error {
 
 		log.Info(
 			"MESSAGE info",
@@ -116,16 +125,18 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error with constructorstandings", err)
 		}
 
-		_, err = bot.SendMessage(tu.Message(
+		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
 			tu.ID(update.Message.Chat.ID),
 			messageToUser,
 		))
 		if err != nil {
 			log.Error("Error sending message with constructorstandings", err)
 		}
+
+		return nil
 	}, th.CommandEqual("constructorstandings"))
 
-	tg.handler.Handle(func(bot *telego.Bot, update telego.Update) {
+	tg.handler.Handle(func(ctx *th.Context, update telego.Update) error {
 
 		log.Info(
 			"MESSAGE info",
@@ -139,16 +150,18 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error with lastrace", err)
 		}
 
-		_, err = bot.SendMessage(tu.Message(
+		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
 			tu.ID(update.Message.Chat.ID),
 			messageToUser,
 		))
 		if err != nil {
 			log.Error("Error sending message with lastrace", err)
 		}
+
+		return nil
 	}, th.CommandEqual("lastrace"))
 
-	tg.handler.Handle(func(bot *telego.Bot, update telego.Update) {
+	tg.handler.Handle(func(ctx *th.Context, update telego.Update) error {
 
 		log.Info(
 			"MESSAGE info",
@@ -162,16 +175,18 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error with nextrace", err)
 		}
 
-		_, err = bot.SendMessage(tu.Message(
+		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
 			tu.ID(update.Message.Chat.ID),
 			messageToUser,
 		))
 		if err != nil {
 			log.Error("Error sending message with nextrace", err)
 		}
+
+		return nil
 	}, th.CommandEqual("nextrace"))
 
-	tg.handler.Handle(func(bot *telego.Bot, update telego.Update) {
+	tg.handler.Handle(func(ctx *th.Context, update telego.Update) error {
 
 		log.Info(
 			"MESSAGE info",
@@ -185,13 +200,15 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error with daysafterrace", err)
 		}
 
-		_, err = bot.SendMessage(tu.Message(
+		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
 			tu.ID(update.Message.Chat.ID),
 			messageToUser,
 		))
 		if err != nil {
 			log.Error("Error sending message with daysafterrace", err)
 		}
+
+		return nil
 	}, th.CommandEqual("daysafterrace"))
 }
 

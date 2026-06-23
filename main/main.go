@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	if err := godotenv.Load("../data.env"); err != nil {
+	if err := godotenv.Load("../.env"); err != nil {
 		slog.Error("No .env file found")
 	} else {
 		slog.Info("Successfull read .env")

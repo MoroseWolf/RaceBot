@@ -13,7 +13,7 @@ import (
 
 type messageService interface {
 	GetDriverStandingsMessage(userDate time.Time) (string, error)
-	GetConstructorStandingsMessage(uerDate time.Time) (string, error)
+	GetConstructorStandingsMessage(userDate time.Time) (string, error)
 	GetCalendarMessage(year int) (string, error)
 	GetNextRaceMessage(userDate time.Time, userTimestamp int) (string, error)
 	GetRaceResultsMessage(userDate time.Time, raceId string) (string, error)
@@ -51,12 +51,26 @@ func (tg *TgAPI) Run(log *slog.Logger) {
 	var err error
 	tg.handler, err = th.NewBotHandler(tg.bot, tg.updates)
 	if err != nil {
-		log.Error("%w", err)
+		log.Error("failed to create bot handler", slog.Any("error", err))
 	}
 	tg.messageHandler(log)
 	tg.handler.Start()
 	defer tg.handler.Stop()
 	defer tg.cancel()
+}
+
+// sendReply отправляет ответ пользователю и логирует результат
+func (tg *TgAPI) sendReply(ctx *th.Context, log *slog.Logger, chatID int64, message string, commandName string) {
+	_, err := ctx.Bot().SendMessage(ctx.Context(), tu.Message(
+		tu.ID(chatID),
+		message,
+	))
+	if err != nil {
+		log.Error("failed to send message",
+			slog.String("command", commandName),
+			slog.Int64("chat_id", chatID),
+			slog.Any("error", err))
+	}
 }
 
 func (tg *TgAPI) messageHandler(log *slog.Logger) {
@@ -65,24 +79,17 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
 		log.Info(
 			"MESSAGE info",
-			slog.Int("peer_id", int(update.Message.Chat.ID)),
+			slog.Int64("peer_id", update.Message.Chat.ID),
 			slog.String("text", update.Message.Text))
 
 		userDate := getDateFromMessage(update.Message.Date)
 
 		messageToUser, err := tg.messageService.GetDriverStandingsMessage(userDate)
 		if err != nil {
-			log.Error("Error with driver standings", err)
+			log.Error("failed to get driver standings", slog.Any("error", err))
 		}
 
-		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			messageToUser,
-		))
-		if err != nil {
-			log.Error("Error sending message with driver standings", err)
-		}
-
+		tg.sendReply(ctx, log, update.Message.Chat.ID, messageToUser, "driverstandings")
 		return nil
 	}, th.CommandEqual("driverstandings"))
 
@@ -90,24 +97,17 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
 		log.Info(
 			"MESSAGE info",
-			slog.Int("peer_id", int(update.Message.Chat.ID)),
+			slog.Int64("peer_id", update.Message.Chat.ID),
 			slog.String("text", update.Message.Text))
 
 		userDate := getDateFromMessage(update.Message.Date)
 
 		messageToUser, err := tg.messageService.GetCalendarMessage(userDate.Year())
 		if err != nil {
-			log.Error("Error with calendar", err)
+			log.Error("failed to get calendar", slog.Any("error", err))
 		}
 
-		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			messageToUser,
-		))
-		if err != nil {
-			log.Error("Error sending message with calendar", err)
-		}
-
+		tg.sendReply(ctx, log, update.Message.Chat.ID, messageToUser, "calendar")
 		return nil
 	}, th.CommandEqual("calendar"))
 
@@ -115,24 +115,17 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
 		log.Info(
 			"MESSAGE info",
-			slog.Int("peer_id", int(update.Message.Chat.ID)),
+			slog.Int64("peer_id", update.Message.Chat.ID),
 			slog.String("text", update.Message.Text))
 
 		userDate := getDateFromMessage(update.Message.Date)
 
 		messageToUser, err := tg.messageService.GetConstructorStandingsMessage(userDate)
 		if err != nil {
-			log.Error("Error with constructorstandings", err)
+			log.Error("failed to get constructor standings", slog.Any("error", err))
 		}
 
-		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			messageToUser,
-		))
-		if err != nil {
-			log.Error("Error sending message with constructorstandings", err)
-		}
-
+		tg.sendReply(ctx, log, update.Message.Chat.ID, messageToUser, "constructorstandings")
 		return nil
 	}, th.CommandEqual("constructorstandings"))
 
@@ -140,24 +133,17 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
 		log.Info(
 			"MESSAGE info",
-			slog.Int("peer_id", int(update.Message.Chat.ID)),
+			slog.Int64("peer_id", update.Message.Chat.ID),
 			slog.String("text", update.Message.Text))
 
 		userDate := getDateFromMessage(update.Message.Date)
 
 		messageToUser, err := tg.messageService.GetRaceResultsMessage(userDate, "last")
 		if err != nil {
-			log.Error("Error with lastrace", err)
+			log.Error("failed to get last race", slog.Any("error", err))
 		}
 
-		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			messageToUser,
-		))
-		if err != nil {
-			log.Error("Error sending message with lastrace", err)
-		}
-
+		tg.sendReply(ctx, log, update.Message.Chat.ID, messageToUser, "lastrace")
 		return nil
 	}, th.CommandEqual("lastrace"))
 
@@ -165,24 +151,17 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
 		log.Info(
 			"MESSAGE info",
-			slog.Int("peer_id", int(update.Message.Chat.ID)),
+			slog.Int64("peer_id", update.Message.Chat.ID),
 			slog.String("text", update.Message.Text))
 
 		userDate := getDateFromMessage(update.Message.Date)
 
 		messageToUser, err := tg.messageService.GetNextRaceMessage(userDate, int(update.Message.Date))
 		if err != nil {
-			log.Error("Error with nextrace", err)
+			log.Error("failed to get next race", slog.Any("error", err))
 		}
 
-		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			messageToUser,
-		))
-		if err != nil {
-			log.Error("Error sending message with nextrace", err)
-		}
-
+		tg.sendReply(ctx, log, update.Message.Chat.ID, messageToUser, "nextrace")
 		return nil
 	}, th.CommandEqual("nextrace"))
 
@@ -190,24 +169,17 @@ func (tg *TgAPI) messageHandler(log *slog.Logger) {
 
 		log.Info(
 			"MESSAGE info",
-			slog.Int("peer_id", int(update.Message.Chat.ID)),
+			slog.Int64("peer_id", update.Message.Chat.ID),
 			slog.String("text", update.Message.Text))
 
 		userDate := getDateFromMessage(update.Message.Date)
 
 		messageToUser, err := tg.messageService.GetCountDaysAfterRaceMessage(userDate, "last")
 		if err != nil {
-			log.Error("Error with daysafterrace", err)
+			log.Error("failed to get days after race", slog.Any("error", err))
 		}
 
-		_, err = ctx.Bot().SendMessage(ctx.Context(), tu.Message(
-			tu.ID(update.Message.Chat.ID),
-			messageToUser,
-		))
-		if err != nil {
-			log.Error("Error sending message with daysafterrace", err)
-		}
-
+		tg.sendReply(ctx, log, update.Message.Chat.ID, messageToUser, "daysafterrace")
 		return nil
 	}, th.CommandEqual("daysafterrace"))
 }

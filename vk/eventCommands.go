@@ -12,22 +12,40 @@ const (
 
 type eventCommand string
 
-func getEventCommand(event string) eventCommand {
-	eventCommands := []eventCommand{
-		commandGpInfo,
-		commandGpList1,
-		commandGpList2,
-		commandGpList3,
-		commandNothing,
+// Предварительно скомпилированные регулярные выражения для event-команд
+var compiledEventCommands = func() []struct {
+	cmd   eventCommand
+	regex *regexp.Regexp
+} {
+	patterns := []struct {
+		cmd   eventCommand
+		regex string
+	}{
+		{commandGpInfo, `gpPage_\d{1,2}`},
+		{commandGpList1, `gpListPage_1`},
+		{commandGpList2, `gpListPage_2`},
+		{commandGpList3, `gpListPage_3`},
 	}
 
-	for _, eventCommand := range eventCommands {
-		matched, _ := regexp.MatchString(string(eventCommand), event)
+	result := make([]struct {
+		cmd   eventCommand
+		regex *regexp.Regexp
+	}, 0, len(patterns))
 
-		if matched {
-			return eventCommand
+	for _, p := range patterns {
+		result = append(result, struct {
+			cmd   eventCommand
+			regex *regexp.Regexp
+		}{cmd: p.cmd, regex: regexp.MustCompile(p.regex)})
+	}
+	return result
+}()
+
+func getEventCommand(event string) eventCommand {
+	for _, entry := range compiledEventCommands {
+		if entry.regex.MatchString(event) {
+			return entry.cmd
 		}
 	}
-
 	return commandNothing
 }

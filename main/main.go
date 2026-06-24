@@ -39,7 +39,7 @@ func setupConnection(conf *config.Config, log *slog.Logger) (*vk_api.VkAPI, *tg_
 	ergastAPI := ergast.NewErgastAPI()
 	service := service.NewServiceF1(ergastAPI)
 
-	vkAPI, err := vk_api.NewVKAPI(conf.VkGroupToken, conf.VkUserToken, service, service, nil)
+	vkAPI, err := vk_api.NewVKAPI(conf.VkGroupToken, conf.VkUserToken, service, service)
 	if err != nil {
 		log.Error("Error vkApi object")
 		os.Exit(1)

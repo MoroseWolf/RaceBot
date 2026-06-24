@@ -31,40 +31,59 @@ const (
 
 type command string
 
-func getCommand(message string) command {
-	commands := []command{
-		commandDrSt,
-		commandCld,
-		commandNxRc,
-		commandConsStFull,
-		commandConsSt,
-		commandLstRc,
-		commandLstQual,
-		commandLstSpr,
-		commandHelp,
-		commandHello,
-		commandDaysAfterRace,
-		commandDaysAfterRaceСut,
-		commandStartCheckStream,
-		commandEndCheckStream,
-		commandLstGP,
-		commandGPs,
-		commandRaceRes,
-		commandQualRes,
-		commandSprRes,
-		commandClsKb,
-		commandLvrsList,
-		commandPredictionAdmin,
-		commandPredictionUser,
+// Предварительно скомпилированные регулярные выражения для всех команд
+var compiledCommands = func() []struct {
+	cmd   command
+	regex *regexp.Regexp
+} {
+	patterns := []struct {
+		cmd   command
+		regex string
+	}{
+		{commandDrSt, `личн.*зач[её]т`},
+		{commandCld, `календар.*сезона`},
+		{commandNxRc, `следующ.*гонк`},
+		{commandConsStFull, `куб.*конструктор`},
+		{commandConsSt, `кк`},
+		{commandLstRc, `результат.?\sгонк`},
+		{commandLstQual, `результат.?\sквалы`},
+		{commandLstSpr, `результат.?\sспринта`},
+		{commandHelp, `что умеешь`},
+		{commandHello, `начать`},
+		{commandDaysAfterRace, `дней без формулы|F1`},
+		{commandDaysAfterRaceСut, `дбф`},
+		{commandStartCheckStream, `strstart`},
+		{commandEndCheckStream, `strend`},
+		{commandLstGP, `ласт гп`},
+		{commandGPs, `этапы`},
+		{commandRaceRes, `raceRes_\d{1,2}`},
+		{commandQualRes, `qualRes_\d{1,2}`},
+		{commandSprRes, `sprRes_\d{1,2}`},
+		{commandClsKb, `выклкб`},
+		{commandLvrsList, `ливреи`},
+		{commandPredictionAdmin, `\Aпрогноз`},
+		{commandPredictionUser, `мойпрогноз`},
 	}
 
-	for _, command := range commands {
-		matched, _ := regexp.MatchString(string(command), message)
+	result := make([]struct {
+		cmd   command
+		regex *regexp.Regexp
+	}, 0, len(patterns))
 
-		if matched {
-			return command
+	for _, p := range patterns {
+		result = append(result, struct {
+			cmd   command
+			regex *regexp.Regexp
+		}{cmd: p.cmd, regex: regexp.MustCompile(p.regex)})
+	}
+	return result
+}()
+
+func getCommand(message string) command {
+	for _, entry := range compiledCommands {
+		if entry.regex.MatchString(message) {
+			return entry.cmd
 		}
 	}
-
 	return commandUnknown
 }

@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"racebot-vk/models"
-	"strconv"
+	"racebot-vk/service"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SevereCloud/vksdk/v3/api"
@@ -28,6 +29,14 @@ const (
 
 var lastStreamId = 0
 
+// Состояние отслеживания новых видео (защита от повторного запуска/остановки)
+var (
+	streamCheckMu  sync.Mutex
+	streamChecking bool
+	streamQuit     chan bool
+	streamTicker   *time.Ticker
+)
+
 type messageService interface {
 	GetDriversListMessage(userDate time.Time) (string, error)
 	GetDriverStandingsMessage(userDate time.Time) (string, error)
@@ -44,30 +53,19 @@ type messageService interface {
 	GetNextRace(userDate time.Time, userTimestamp int) (models.Race, error)
 }
 
-// обработка команд в payload сообщения
 type eventService interface {
 	GetGPInfoCarousel(userDate time.Time, raceId string) (string, error)
 }
 
-// прогноз пользователя
-type Prediction struct {
-	first  uint8
-	second uint8
-	third  uint8
-}
-
 type VkAPI struct {
-	usrVk                *api.VK
-	lp                   *longpoll.LongPoll
-	messageService       messageService
-	eventService         eventService
-	predictionActive     bool
-	predictionMessageIDs map[int]int //map[chat_id]message_id
-	//predictions          map[int]Prediction
-	raceResult Prediction
+	usrVk             *api.VK
+	lp                *longpoll.LongPoll
+	messageService    messageService
+	eventService      eventService
+	predictionService *service.PredictionService
 }
 
-func NewVKAPI(groupToken, userToken string, messageService messageService, eventService eventService) (*VkAPI, error) {
+func NewVKAPI(groupToken, userToken string, messageService messageService, eventService eventService, predictionService *service.PredictionService) (*VkAPI, error) {
 	vk := api.NewVK(groupToken)
 
 	lp, err := longpoll.NewLongPollCommunity(vk)
@@ -76,14 +74,11 @@ func NewVKAPI(groupToken, userToken string, messageService messageService, event
 	}
 
 	return &VkAPI{
-		usrVk:                api.NewVK(userToken),
-		lp:                   lp,
-		messageService:       messageService,
-		eventService:         eventService,
-		predictionActive:     false,
-		predictionMessageIDs: make(map[int]int),
-		//predictions:         make(map[int]Prediction),
-		raceResult: Prediction{},
+		usrVk:             api.NewVK(userToken),
+		lp:                lp,
+		messageService:    messageService,
+		eventService:      eventService,
+		predictionService: predictionService,
 	}, nil
 }
 
@@ -97,7 +92,6 @@ func (vk *VkAPI) Run(log *slog.Logger) {
 	}
 }
 
-// sendAndLog отправляет сообщение и логирует результат. Возвращает ответ API.
 func (vk *VkAPI) sendAndLog(log *slog.Logger, message string, peerID int, keyboard, template, attachment *string, commandLabel string) (api.MessagesSendUserIDsResponse, error) {
 	resp, err := sendMessageToUser(message, peerID, vk.lp.VK, keyboard, template, attachment)
 	if err != nil {
@@ -118,9 +112,7 @@ func (vk *VkAPI) sendAndLog(log *slog.Logger, message string, peerID int, keyboa
 }
 
 func (vk *VkAPI) messageHandler(log *slog.Logger) {
-	quit := make(chan bool)
 	var myUsrVk MyVk = MyVk{vk.usrVk}
-	//var currentRaceID int
 
 	vk.lp.MessageNew(func(_ context.Context, obj events.MessageNewObject) {
 		log.Info(
@@ -128,13 +120,8 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 			slog.Int("peer_id", obj.Message.PeerID),
 			slog.String("text", obj.Message.Text))
 
-		var messageToUser string
-		var command command
-		var raceId string
-
 		userTimestamp := obj.Message.Date
 		userDate := time.Unix(int64(userTimestamp), 0)
-
 		messageText := strings.ToLower(obj.Message.Text)
 
 		textPayload, err := extractCommand(obj.Message.Payload)
@@ -142,293 +129,32 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 			log.Error("Error reading payload: ", slog.Any("error", err))
 		}
 
+		ctx := handlerContext{
+			log:           log,
+			vk:            vk,
+			myUsrVk:       &myUsrVk,
+			obj:           obj,
+			userDate:      userDate,
+			userTimestamp: userTimestamp,
+			messageText:   messageText,
+			raceID:        "last",
+		}
+
 		if textPayload != nil {
-			command = getCommand(*textPayload)
-			raceId = (strings.Split(*textPayload, "_"))[1]
+			cmd := getCommand(*textPayload)
+			ctx.raceID = (strings.Split(*textPayload, "_"))[1]
 
-			switch command {
-
-			case commandRaceRes:
-				messageToUser, err = vk.messageService.GetRaceResultsMessage(userDate, raceId)
-				if err != nil {
-					log.Error("failed to get race result", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "raceRes")
-
-			case commandQualRes:
-				messageToUser, err := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
-				if err != nil {
-					log.Error("failed to get qualifying result", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "qualRes")
-
-			case commandSprRes:
-				messageToUser = vk.messageService.GetSprintResultsMessage(userDate, raceId)
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "sprRes")
+			if handler, ok := payloadHandlers[cmd]; ok {
+				handler(ctx)
 			}
 		} else {
-			command = getCommand(messageText)
-			raceId = "last"
-			/*
-				if checkStreamCommand(obj.Message.PeerID, command) {
+			cmd := getCommand(messageText)
 
-					ticker := time.NewTicker(5 * time.Minute)
-					lastVideo, err := getLastVideos(myUsrVk, 1)
-					if err != nil {
-						log.Error(err.Error())
-					}
-					lastStreamId = lastVideo[0].ID
-					switch command {
-
-					case commandStartCheckStream:
-
-						messageToUser = "Команда принята!"
-						resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
-						if err != nil {
-							log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
-						}
-						log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
-						log.Info("Start video check")
-
-						go checkLastStream(quit, ticker, log, vk, &myUsrVk, obj)
-
-					case commandEndCheckStream:
-					ticker.Stop()
-						quit <- true
-						messageToUser = "Команда принята!"
-						resp, err := sendMessageToUser(messageToUser, obj.Message.PeerID, vk.lp.VK, nil, nil, nil)
-						if err != nil {
-							log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
-						}
-						log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
-
-					}
-
-				} else {
-			*/
-
-			switch command {
-			case commandHello:
-				messageToUser =
-					`Привет! Я бот, который делится информацией про F1 :)
-					Пока что я могу сказать тебе информацию только о текущем сезоне (но всё ещё впереди).
-					Для того чтобы подробнее познакомиться с моими возможностями напиши мне "Что умеешь?".
-					
-					Приятного пользования :)`
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "hello")
-
-			case commandHelp:
-				messageToUser =
-					`Команды которые я понимаю (могу их прочесть в твоём ообщении среди других слов):
-						• календарь сезона - список гран-при F1 текущего сезона
-						• кубок кострукторов или кк - текущее положение команд в кубке контрукторов
-						• личный зачёт - текущее положение гонщиков в личном зачёте
-						• следующая гонка - информация о следующем гран-при F1
-						• результат гонки - результат последней прошедшей гонки F1
-						• дней без формулы/F1 - количество дней с последней гонки F1
-				
-					!Внимание! Информация, связанная с проведённой гонкой может обновляться не сразу.
-					Работаем над этим.`
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "help")
-
-			case commandDrSt:
-				messageToUser, err = vk.messageService.GetDriverStandingsMessage(userDate)
-				if err != nil {
-					log.Error("failed to get driver standings", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "driverStandings")
-
-			case commandCld:
-				messageToUser, err = vk.messageService.GetCalendarMessage(userDate.Year())
-				if err != nil {
-					log.Error("failed to get calendar", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "calendar")
-
-			case commandNxRc:
-				messageToUser, err = vk.messageService.GetNextRaceMessage(userDate, userTimestamp)
-				if err != nil {
-					log.Error("failed to get next race", slog.Any("error", err))
-					break
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "nextRace")
-
-			case commandConsStFull, commandConsSt:
-				messageToUser, err = vk.messageService.GetConstructorStandingsMessage(userDate)
-				if err != nil {
-					log.Error("failed to get constructor standings", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "constructorStandings")
-
-			case commandLstRc:
-				messageToUser, err = vk.messageService.GetRaceResultsMessage(userDate, raceId)
-				if err != nil {
-					log.Error("failed to get last race result", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "lastRace")
-			case commandLstGP:
-				crsl, err := vk.messageService.GetGPInfoCarousel(userDate, raceId)
-				if err != nil {
-					log.Error("failed to get GP info carousel", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, "Информация о гран-при:", obj.Message.PeerID, nil, &crsl, nil, "lastGP")
-
-			case commandGPs:
-				count, err := vk.messageService.GetCountOfRaces(userDate)
-				if err != nil {
-					log.Error("failed to get count of races", slog.Any("error", err))
-				}
-
-				kb, err := makeKeyboard(2, 4, 1, count, false)
-				if err != nil {
-					log.Error("failed to create keyboard", slog.Any("error", err))
-				}
-
-				jsKb, err := json.Marshal(kb)
-				if err != nil {
-					log.Error("failed to marshal keyboard", slog.Any("error", err))
-				}
-
-				strKb := string(jsKb)
-				vk.sendAndLog(log, "Этапы F1:", obj.Message.PeerID, &strKb, nil, nil, "GPs")
-
-			case commandDaysAfterRace, commandDaysAfterRaceСut:
-				messageToUser, err := vk.messageService.GetCountDaysAfterRaceMessage(userDate, raceId)
-				if err != nil {
-					log.Error("failed to get days after race", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "daysAfterRace")
-
-			case commandLstQual:
-				messageToUser, err := vk.messageService.GetQualifyingResultsMessage(userDate, raceId)
-				if err != nil {
-					log.Error("failed to get qualifying result", slog.Any("error", err))
-				}
-				vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "lastQual")
-
-			case commandClsKb:
-				kb, err := makeKeyboard(0, 0, 0, 0, false)
-				if err != nil {
-					log.Error("failed to create keyboard", slog.Any("error", err))
-				}
-
-				jsKb, err := json.Marshal(kb)
-				if err != nil {
-					log.Error("failed to marshal keyboard", slog.Any("error", err))
-				}
-
-				strKb := string(jsKb)
-
-				msgResp, err := vk.sendAndLog(log, "Закрываю", obj.Message.PeerID, &strKb, nil, nil, "closeKeyboard")
-				if err != nil {
-					return
-				}
-
-				err = deleteMessages(vk.lp.VK, []int{msgResp[0].ConversationMessageID}, obj.Message.PeerID, true)
-				if err != nil {
-					log.Error("failed to delete messages", slog.Any("error", err))
-				}
-
-			case commandLvrsList:
-				photo := "photo-219009582_457239026"
-				vk.sendAndLog(log, "Ливреи машин 2024 года", obj.Message.PeerID, nil, nil, &photo, "liveries")
-
-			case commandPredictionAdmin:
-				if obj.Message.FromID == botAdminId {
-					if vk.predictionActive {
-						vk.sendAndLog(log, "Прогноз активен.", obj.Message.PeerID, nil, nil, nil, "predictionAdmin")
-					} else {
-						nxtRc, err := vk.messageService.GetNextRace(userDate, userTimestamp)
-						if err != nil {
-							log.Error("failed to get next race for prediction", slog.Any("error", err))
-							return
-						}
-						raceId = nxtRc.Season + "_" + nxtRc.Round
-						vk.predictionActive = true
-
-						driversMessage, err := vk.messageService.GetDriversListMessage(userDate)
-						if err != nil {
-							log.Error("failed to get drivers list", slog.Any("error", err))
-						}
-
-						//chats := []int{alphaTestChatId, botAdminId}
-						chats := []int{botAdminId}
-						for _, chat := range chats {
-							messageToUser = "Открываем конкурс прогнозов! Укажите номера гонщиков, которые по вашему мнению займут первые 3 места по итогам будущей гонки. \n\nОтветьте на ЭТО сообщение в формате: №_топ1 №_топ2 №_топ3\nили напишите\n'/мойпрогноз №_топ1 №_топ2 №_топ3'\n\n\n Пример ответа: '23 17 29'"
-							msgResp, err := vk.sendAndLog(log, messageToUser, chat, nil, nil, nil, "predictionStart")
-							if err != nil {
-								continue
-							}
-
-							vk.predictionMessageIDs[chat] = msgResp[0].ConversationMessageID
-							log.Info("Prediction started in chat", slog.Int("chat_id", chat), slog.Int("message_id", msgResp[0].ConversationMessageID))
-
-							_, err = vk.sendAndLog(log, driversMessage, chat, nil, nil, nil, "predictionDriversList")
-							if err != nil {
-								continue
-							}
-						}
-						log.Info("Prediction started globally", slog.String("race_id", raceId))
-					}
-				}
-
-			case commandPredictionUser:
-				if vk.predictionActive {
-
-					pred, err := savePrediction(strings.TrimPrefix(messageText, "/мойпрогноз "))
-					if err != nil {
-						messageToUser = "Неверный формат сообщения! Повторите попытку и укажите номера гонщиков, которые на ваш взгляд займут первые 3 места, в формате:\n\n/мойпрогноз №_топ1 №_топ2 №_топ3"
-						vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "predictionError")
-						return
-					}
-					vk.predictionMessageIDs[obj.Message.FromID] = obj.Message.ConversationMessageID
-
-					messageToUser = fmt.Sprintf("Ваш прогноз принят: 1. №%d, 2. №%d, 3. №%d", pred.first, pred.second, pred.third)
-					resp, err := vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "predictionConfirm")
-					if err == nil && len(resp) > 0 {
-						log.Info("Prediction recorded", slog.Int("user_id", obj.Message.FromID), slog.Any("prediction", pred), slog.Int("message_id", resp[0].MessageID))
-					}
-				}
-
-			case commandStartCheckStream, commandEndCheckStream:
-				ticker := time.NewTicker(5 * time.Minute)
-				lastVideo, err := getLastVideos(myUsrVk, 1)
-				if err != nil {
-					log.Error("failed to get last videos", slog.Any("error", err))
-				}
-				lastStreamId = lastVideo[0].ID
-				if command == commandStartCheckStream {
-					vk.sendAndLog(log, "Команда принята!", obj.Message.PeerID, nil, nil, nil, "checkStreamStart")
-					log.Info("Start video check")
-					go checkLastStream(quit, ticker, log, vk, &myUsrVk, obj)
-				}
-
-				if command == commandEndCheckStream {
-					ticker.Stop()
-					quit <- true
-					vk.sendAndLog(log, "Команда принята!", obj.Message.PeerID, nil, nil, nil, "checkStreamEnd")
-				}
-
-			default:
+			if handler, ok := messageHandlers[cmd]; ok {
+				handler(ctx)
+			} else {
 				log.Info("Команда в сообщении не распознана", slog.String("text", obj.Message.Text))
-
-				if vk.predictionActive && obj.Message.ReplyMessage != nil && obj.Message.ReplyMessage.ConversationMessageID == vk.predictionMessageIDs[obj.Message.PeerID] {
-
-					pred, err := parsePrediction(messageText)
-					if err != nil {
-						messageToUser = "Неверный формат сообщения! Повторите попытку и укажите только номера гонщиков, которые на ваш взгляд займут первые 3 места."
-						vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "predictionParseError")
-						return
-					}
-					vk.predictionMessageIDs[obj.Message.FromID] = obj.Message.ConversationMessageID
-					messageToUser = fmt.Sprintf("Ваш прогноз принят: 1. №%d, 2. №%d, 3. №%d", pred.first, pred.second, pred.third)
-
-					resp, err := vk.sendAndLog(log, messageToUser, obj.Message.PeerID, nil, nil, nil, "predictionReplyConfirm")
-					if err == nil && len(resp) > 0 {
-						log.Info("Prediction recorded", slog.Int("user_id", obj.Message.FromID), slog.Any("prediction", pred), slog.Int("message_id", resp[0].MessageID))
-					}
-					return
-				}
+				handleUnknownWithPrediction(ctx)
 			}
 		}
 	})
@@ -436,7 +162,6 @@ func (vk *VkAPI) messageHandler(log *slog.Logger) {
 
 func (vk *VkAPI) eventHandler(log *slog.Logger) {
 	vk.lp.MessageEvent(func(_ context.Context, obj events.MessageEventObject) {
-
 		log.Info(
 			"EVENT info",
 			slog.Int("peer_id", obj.PeerID),
@@ -445,69 +170,23 @@ func (vk *VkAPI) eventHandler(log *slog.Logger) {
 		payloadCommand, err := extractCommand(string(obj.Payload))
 		if err != nil {
 			log.Error("Error reading payload", slog.Any("error", err))
+			return
 		}
-		command := getEventCommand(*payloadCommand)
+		if payloadCommand == nil {
+			return
+		}
 
-		switch command {
+		cmd := getEventCommand(*payloadCommand)
 
-		case commandGpList1, commandGpList2, commandGpList3:
-			var numPage int
+		ctx := eventHandlerContext{
+			log:     log,
+			vk:      vk,
+			obj:     obj,
+			payload: *payloadCommand,
+		}
 
-			switch command {
-			case commandGpList1:
-				numPage = 1
-			case commandGpList2:
-				numPage = 2
-			case commandGpList3:
-				numPage = 3
-			}
-
-			newKeyboard, err := makeKeyboard(2, 4, numPage, 24, false)
-			if err != nil {
-				log.Error("failed to make keyboard", slog.Any("error", err))
-				break
-			}
-
-			jsKb, err := json.Marshal(newKeyboard)
-			if err != nil {
-				log.Error("failed to marshal keyboard", slog.Any("error", err))
-			}
-			strKb := string(jsKb)
-
-			msgResp, err := vk.sendAndLog(log, "Обновление", obj.PeerID, &strKb, nil, nil, fmt.Sprintf("gpListPage_%d", numPage))
-			if err != nil {
-				break
-			}
-
-			evResp, err := sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
-			if err != nil {
-				log.Error("failed to send event answer", slog.Int("peer_id", obj.PeerID), slog.Any("error", err))
-			}
-			log.Info("Event sent", slog.Int("response", evResp))
-
-			err = deleteMessages(vk.lp.VK, []int{msgResp[0].ConversationMessageID}, obj.PeerID, true)
-			if err != nil {
-				log.Error("failed to delete messages", slog.Any("error", err))
-			}
-
-		case commandGpInfo:
-
-			timeNow := time.Now()
-			number := strings.Split(*payloadCommand, "_")
-
-			curRace, err := vk.eventService.GetGPInfoCarousel(timeNow, number[1])
-			if err != nil {
-				log.Error("failed to get GP info carousel", slog.Any("error", err))
-			}
-
-			vk.sendAndLog(log, "Информация о гран-при:", obj.PeerID, nil, &curRace, nil, "gpInfo")
-
-			evResp, err := sendEventMessageToUser(vk.lp.VK, obj.PeerID, obj.EventID, obj.UserID)
-			if err != nil {
-				log.Error("failed to send event answer", slog.Int("peer_id", obj.PeerID), slog.Any("error", err))
-			}
-			log.Info("Event sent", slog.Int("response", evResp))
-
+		if handler, ok := eventHandlers[cmd]; ok {
+			handler(ctx)
 		}
 	})
 }
@@ -516,7 +195,6 @@ func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, t
 	b := params.NewMessagesSendBuilder()
 	b.Message(messageToUser)
 	b.RandomID(0)
-	//b.PeerID(peerID)
 	b.PeerIDs([]int{peerID})
 
 	if keyboard != nil {
@@ -525,7 +203,6 @@ func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, t
 	if template != nil {
 		b.Template(*template)
 	}
-
 	if attachment != nil {
 		b.Attachment(*attachment)
 	}
@@ -534,7 +211,6 @@ func sendMessageToUser(messageToUser string, peerID int, vk *api.VK, keyboard, t
 	if err != nil {
 		return nil, fmt.Errorf("error sending message to user: %w", err)
 	}
-	//slog.Info("Message-answer sended", slog.Any("id", msgId))
 	return msgId, nil
 }
 
@@ -548,7 +224,6 @@ func sendEventMessageToUser(vk *api.VK, peerID int, eventID string, userID int) 
 	if err != nil {
 		return resp, fmt.Errorf("error sending message to user: %w", err)
 	}
-	//slog.Info("Event sent", slog.Int("response", resp))
 	return resp, nil
 }
 
@@ -575,13 +250,11 @@ func extractCommand(payload string) (*string, error) {
 		}
 		slog.Debug("Command from paylpad", slog.String("Command", pl.Command))
 		return &pl.Command, nil
-	} else {
-		return nil, nil
 	}
+	return nil, nil
 }
 
 func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
-
 	var button Button
 	btnsRow := make([]Button, 0, row)
 	buttons := [][]Button{}
@@ -627,7 +300,6 @@ func makeKeyboard(row, col, numPage, countEl int, inline bool) (Kb, error) {
 }
 
 func getLastVideos(vk MyVk, count int) ([]MyVideo, error) {
-
 	prms := params.NewVideoGetBuilder()
 	prms.OwnerID(f1memesId)
 	prms.Count(count)
@@ -638,119 +310,60 @@ func getLastVideos(vk MyVk, count int) ([]MyVideo, error) {
 	}
 
 	return resp.Items, nil
+}
 
+// checkStreamOnce выполняет одну проверку новых видео и возвращает false,
+// если отслеживание нужно прекратить (произошла ошибка получения видео).
+func checkStreamOnce(log *slog.Logger, vk *VkAPI, myUsrVk *MyVk, obj events.MessageNewObject) bool {
+	lastVideo, err := getLastVideos(*myUsrVk, 2)
+	if err != nil {
+		log.Error(err.Error())
+		_, err := sendMessageToUser("Ошибка получения новых видео. Перезапустите отслеживание.", botAdminId, vk.lp.VK, nil, nil, nil)
+		if err != nil {
+			log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+		}
+		return false
+	}
+	log.Info("Video id", slog.Int("ID", lastVideo[0].ID))
+
+	if lastVideo[0].ID != lastStreamId {
+		if lastVideo[0].Live && lastVideo[0].LiveStatus == "started" {
+			lastStreamId = lastVideo[0].ID
+			streamLink := fmt.Sprintf("video%d_%d", f1memesId, lastStreamId)
+
+			messageToUser := fmt.Sprintf("'F1 Memes TV' начали трансляцию '%s'!\n", lastVideo[0].Title)
+			resp, err := sendMessageToUser(messageToUser, f1memesChatId, vk.lp.VK, nil, nil, &streamLink)
+			if err != nil {
+				log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+			}
+
+			log.Info("Video link", slog.String("video_id", streamLink))
+			log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
+		}
+	}
+	return true
 }
 
 func checkLastStream(quit <-chan bool, ticker *time.Ticker, log *slog.Logger, vk *VkAPI, myUsrVk *MyVk, obj events.MessageNewObject) {
+	defer func() {
+		ticker.Stop()
+		streamCheckMu.Lock()
+		streamChecking = false
+		streamQuit = nil
+		streamTicker = nil
+		streamCheckMu.Unlock()
+		log.Info("End video check")
+	}()
+
 	for {
 		select {
 		case <-quit:
-			ticker.Stop()
-			log.Info("End video check")
 			return
 		case t := <-ticker.C:
 			log.Info("Video check", slog.String("time", t.UTC().String()))
-			lastVideo, err := getLastVideos(*myUsrVk, 2)
-			if err != nil {
-				log.Error(err.Error())
-				ticker.Stop()
-				log.Info("End video check")
-				_, err := sendMessageToUser("Ошибка получения новых видео. Перезапустите отслеживание.", botAdminId, vk.lp.VK, nil, nil, nil)
-				if err != nil {
-					log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
-				}
+			if !checkStreamOnce(log, vk, myUsrVk, obj) {
 				return
-			}
-			log.Info("Video id", slog.Int("ID", lastVideo[0].ID))
-
-			if lastVideo[0].ID != lastStreamId {
-				if lastVideo[0].Live && lastVideo[0].LiveStatus == "started" {
-					lastStreamId = lastVideo[0].ID
-					streamLink := fmt.Sprintf("video%d_%d", f1memesId, lastStreamId)
-					/*if err != nil {
-						log.Error(err.Error())
-					}*/
-
-					messageToUser := fmt.Sprintf("'F1 Memes TV' начали трансляцию '%s'!\n", lastVideo[0].Title)
-					resp, err := sendMessageToUser(messageToUser, f1memesChatId, vk.lp.VK, nil, nil, &streamLink)
-					if err != nil {
-						log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
-					}
-
-					log.Info("Video link", slog.String("video_id", streamLink))
-					log.Info("Message sent", slog.Group("response", slog.Int("peer_id", resp[0].PeerID), slog.Int("message_id", resp[0].MessageID), slog.Int("cm_id", resp[0].ConversationMessageID)))
-
-				}
-
 			}
 		}
 	}
 }
-
-func parsePrediction(text string) (Prediction, error) {
-	parts := strings.Fields(text)
-	if len(parts) != 3 {
-		return Prediction{}, fmt.Errorf("error in parsing prediction")
-	}
-	top1, err := strconv.ParseUint(parts[0], 10, 8)
-	if err != nil {
-		return Prediction{}, fmt.Errorf("Top_1 position is not number")
-	}
-
-	top2, err := strconv.ParseUint(parts[1], 10, 8)
-	if err != nil {
-		return Prediction{}, fmt.Errorf("Top_2 position is not number")
-	}
-
-	top3, err := strconv.ParseUint(parts[2], 10, 8)
-	if err != nil {
-		return Prediction{}, fmt.Errorf("Top_3 position is not number")
-	}
-
-	return Prediction{
-		first:  uint8(top1),
-		second: uint8(top2),
-		third:  uint8(top3),
-	}, nil
-}
-
-func savePrediction(messageText string) (*Prediction, error) {
-	pred, err := parsePrediction(messageText)
-	if err != nil {
-		return &Prediction{}, err
-	}
-
-	//здесь будет проходить сохранение в БД данных о прогнозе юзера
-	return &pred, nil
-}
-
-// ----------------------------------
-//
-//	неиспользуемые на данный момент функции
-//
-// ----------------------------------
-/*
-func deleteMention(messageText string) string {
-	messageText = strings.Replace(messageText, ", ", "", 1)
-	messageText = strings.TrimPrefix(messageText, "[club219009582|@club219009582]")
-	messageText = strings.TrimPrefix(messageText, "[club219009582|Race Bot]")
-	return messageText
-}
-*/
-/*
-func extractStreamLink(messageText string) string {
-	msgParts := strings.Split(messageText, " ")
-	link := strings.TrimPrefix(msgParts[1], "https://vk.com/")
-	return link
-}
-*/
-
-/*
-func checkStreamCommand(id int, command command) bool {
-	if ((id == f1memesStreamer) || (id == botAdminId)) && ((command == commandStartCheckStream) || (command == commandEndCheckStream)) {
-		return true
-	}
-	return false
-}
-
-*/

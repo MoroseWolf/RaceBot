@@ -6,16 +6,23 @@ import (
 )
 
 type Config struct {
-	VkUserToken  string
-	VkGroupToken string
-	TgChatToken  string
+	VkUserToken      string
+	VkGroupToken     string
+	TgChatToken      string
+	PredictionDBPath string
 }
 
 func New() *Config {
+	dbPath := os.Getenv("PREDICTION_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/data/predictions.db"
+	}
+
 	return &Config{
-		VkGroupToken: getEnv("RACEVK_BOT"),
-		VkUserToken:  getEnv("USERTOKEN_VK"),
-		TgChatToken:  getEnv("RACETG_BOT"),
+		VkGroupToken:     getEnv("RACEVK_BOT"),
+		VkUserToken:      getEnv("USERTOKEN_VK"),
+		TgChatToken:      getEnv("RACETG_BOT"),
+		PredictionDBPath: dbPath,
 	}
 }
 

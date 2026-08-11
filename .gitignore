@@ -1,0 +1,30 @@
+﻿# --- Скомпилированные бинари Go ---
+main.exe
+*.exe
+__debug_bin*
+main/*.exe
+
+# --- База данных (рабочие данные) ---
+*.db
+*.db-shm
+*.db-wal
+
+# --- Секреты и окружение ---
+.env
+.env.local
+*.env
+file.env
+
+# --- Документы и планы ---
+plans/
+
+# --- Docker ---
+Dockerfile
+
+# --- IDE ---
+.vscode/
+
+# --- Логи и временные файлы ---
+*.log
+*.tmp
+.DS_Store

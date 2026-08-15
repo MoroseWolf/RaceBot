@@ -304,10 +304,21 @@ func getLastVideos(vk MyVk, count int) ([]MyVideo, error) {
 	prms.OwnerID(f1memesId)
 	prms.Count(count)
 
+	slog.Debug("video.get request",
+		slog.String("owner_id", fmt.Sprintf("%d", f1memesId)),
+		slog.Int("count", count),
+	)
+
 	resp, err := vk.VideoGet(prms.Params)
 	if err != nil {
+		slog.Error("video.get failed", slog.String("owner_id", fmt.Sprintf("%d", f1memesId)), slog.Any("error", err))
 		return nil, fmt.Errorf("error in video.get: %w", err)
 	}
+
+	slog.Debug("video.get response",
+		slog.Int("count_field", resp.Count),
+		slog.Int("items_len", len(resp.Items)),
+	)
 
 	return resp.Items, nil
 }
@@ -321,6 +332,14 @@ func checkStreamOnce(log *slog.Logger, vk *VkAPI, myUsrVk *MyVk, obj events.Mess
 		_, err := sendMessageToUser("Ошибка получения новых видео. Перезапустите отслеживание.", botAdminId, vk.lp.VK, nil, nil, nil)
 		if err != nil {
 			log.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
+		}
+		return false
+	}
+	if len(lastVideo) == 0 {
+		slog.Error("video.get returned empty list")
+		_, err := sendMessageToUser("Получен пустой список видео. Перезапустите отслеживание.", botAdminId, vk.lp.VK, nil, nil, nil)
+		if err != nil {
+			slog.Error("Error with sending message-answer to command `checkStream` to user", slog.Int("peer_id", obj.Message.PeerID), slog.Any("error", err))
 		}
 		return false
 	}

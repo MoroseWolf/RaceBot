@@ -556,23 +556,30 @@ func handleMyPredictionRating(ctx handlerContext) error {
 
 func handleCheckStream(ctx handlerContext) error {
 	streamCheckMu.Lock()
-	defer streamCheckMu.Unlock()
 
 	if ctx.messageText == "strstart" {
 		if streamChecking {
+			streamCheckMu.Unlock()
 			ctx.vk.sendAndLog(ctx.log, "Отслеживание уже запущено! Сначала завершите текущее отслеживание.", ctx.obj.Message.PeerID, nil, nil, nil, "checkStreamStart")
 			return nil
 		}
 
-		lastVideo, err := getLastVideos(*ctx.myUsrVk, 1)
+		lastVideo, err := getLastVideos(*ctx.myUsrVk, 2)
 		if err != nil {
+			streamCheckMu.Unlock()
 			ctx.log.Error("failed to get last videos", slog.Any("error", err))
 			return err
+		}
+		if len(lastVideo) == 0 {
+			streamCheckMu.Unlock()
+			ctx.vk.sendAndLog(ctx.log, "Не удалось получить список видео — отслеживание не запущено.", ctx.obj.Message.PeerID, nil, nil, nil, "checkStreamStart")
+			return nil
 		}
 		lastStreamId = lastVideo[0].ID
 
 		// Немедленная первая проверка: если она упадёт, тикер не запускаем
 		if !checkStreamOnce(ctx.log, ctx.vk, ctx.myUsrVk, ctx.obj) {
+			streamCheckMu.Unlock()
 			ctx.log.Info("Video check aborted on start")
 			return nil
 		}
@@ -583,17 +590,34 @@ func handleCheckStream(ctx handlerContext) error {
 
 		ctx.vk.sendAndLog(ctx.log, "Команда принята!", ctx.obj.Message.PeerID, nil, nil, nil, "checkStreamStart")
 		ctx.log.Info("Start video check")
+
+		// Снимаем блокировку ДО запуска горутины, иначе checkLastStream
+		// при завершении не сможет захватить мьютекс в своём defer
+		// (это приводило к взаимной блокировке и зависанию обработки всех команд).
+		streamCheckMu.Unlock()
 		go checkLastStream(streamQuit, streamTicker, ctx.log, ctx.vk, ctx.myUsrVk, ctx.obj)
 		return nil
 	}
 
-	// strend
-	if !streamChecking {
+	if !streamChecking || streamQuit == nil {
+		streamCheckMu.Unlock()
 		ctx.vk.sendAndLog(ctx.log, "Отслеживание уже остановлено! Нечего завершать.", ctx.obj.Message.PeerID, nil, nil, nil, "checkStreamEnd")
 		return nil
 	}
 
-	streamQuit <- true
+	// Фиксируем канал и снимаем мьютекс до сигнала остановки: функция
+	// checkLastStream при выходе блокирует тот же мьютекс, поэтому держать
+	// его во время отправки в канал — гарантированный дедлок.
+	quit := streamQuit
+	streamCheckMu.Unlock()
+
+	// Неблокирующая отправка сигнала: если горутина уже завершилась,
+	// не зависаем навсегда в ожидании читателя канала.
+	select {
+	case quit <- true:
+	default:
+	}
+
 	ctx.vk.sendAndLog(ctx.log, "Команда принята!", ctx.obj.Message.PeerID, nil, nil, nil, "checkStreamEnd")
 	return nil
 }

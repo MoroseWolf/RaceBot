@@ -8,7 +8,7 @@ type ConstructorStandingsItem struct {
 }
 
 type DriverStandingsItem struct {
-	Position     int
+	Position     string
 	PositionText string
 	Points       string
 	Wins         string

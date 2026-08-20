@@ -87,8 +87,17 @@ func (vk *VkAPI) Run(log *slog.Logger) {
 	vk.eventHandler(log)
 
 	log.Info("Start longpoll")
-	if err := vk.lp.Run(); err != nil {
-		log.Error("longpoll run failed", slog.Any("error", err))
+
+	for {
+		err := vk.lp.Run()
+		if err != nil {
+			log.Error("longpoll run failed, restarting in 60s", slog.Any("error", err))
+			// Пауза, чтобы VK успел снять лимит/стабилизировать сессию
+			time.Sleep(60 * time.Second)
+			continue
+		}
+		log.Info("Longpoll stopped normally")
+		return
 	}
 }
 
